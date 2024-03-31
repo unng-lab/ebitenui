@@ -15,6 +15,7 @@ type GridLayout struct {
 	rowSpacing    int
 	columnStretch []bool
 	rowStretch    []bool
+	inverted      bool
 }
 
 // GridLayoutOpt is a function that configures g.
@@ -36,6 +37,9 @@ type GridLayoutData struct {
 
 	// VerticalPosition specifies the vertical anchoring position inside the grid cell.
 	VerticalPosition GridLayoutPosition
+
+	// Inverted specifies if the layout should be inverted.
+	Inverted bool
 }
 
 // GridLayoutPosition is the type used to specify an anchoring position.

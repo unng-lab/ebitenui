@@ -10,6 +10,7 @@ type RowLayout struct {
 	direction Direction
 	padding   Insets
 	spacing   int
+	inverted  bool
 }
 
 type RowLayoutOptions struct {
@@ -31,6 +32,9 @@ type RowLayoutData struct {
 
 	// MaxHeight specifies the maximum height.
 	MaxHeight int
+
+	// Inverted specifies whether to layout widgets in the opposite direction.
+	Inverted bool
 }
 
 // RowLayoutPosition is the type used to specify an anchoring position.
@@ -83,6 +87,13 @@ func (o RowLayoutOptions) Spacing(s int) RowLayoutOpt {
 	}
 }
 
+// Inverted configures a row layout to layout widgets in the opposite direction.
+func (o RowLayoutOptions) Inverted(b bool) RowLayoutOpt {
+	return func(f *RowLayout) {
+		f.inverted = b
+	}
+}
+
 // PreferredSize implements Layouter.
 func (r *RowLayout) PreferredSize(widgets []PreferredSizeLocateableWidget) (int, int) {
 	rect := image.Rectangle{}
@@ -114,21 +125,34 @@ func (r *RowLayout) layout(widgets []PreferredSizeLocateableWidget, rect image.R
 
 		wx, wy := x, y
 		ww, wh := widget.PreferredSize()
-
 		ld := widget.GetWidget().LayoutData
 		if rld, ok := ld.(RowLayoutData); ok {
 			wx, wy, ww, wh = r.applyLayoutData(rld, wx, wy, ww, wh, usePosition, rect, x, y)
 		}
-
+		if r.inverted {
+			if r.direction == DirectionHorizontal {
+				wx = x + rect.Dx() - ww
+			} else {
+				wy = y + rect.Dy() - wh
+			}
+		}
 		wr := image.Rect(0, 0, ww, wh)
 		wr = wr.Add(rect.Min)
 		wr = wr.Add(image.Point{wx, wy})
 		locationFunc(widget, wr)
 
 		if r.direction == DirectionHorizontal {
-			x += ww + r.spacing
+			if r.inverted {
+				x -= ww + r.spacing
+			} else {
+				x += ww + r.spacing
+			}
 		} else {
-			y += wh + r.spacing
+			if r.inverted {
+				y -= wh + r.spacing
+			} else {
+				y += wh + r.spacing
+			}
 		}
 	}
 }
