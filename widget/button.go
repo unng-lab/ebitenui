@@ -50,6 +50,8 @@ type Button struct {
 	tabOrder      int
 	focused       bool
 	justSubmitted bool
+
+	focusMap map[FocusDirection]Focuser
 }
 
 type ButtonOpt func(b *Button)
@@ -86,16 +88,23 @@ type ButtonReleasedEventArgs struct {
 }
 
 type ButtonClickedEventArgs struct {
-	Button *Button
+	Button  *Button
+	OffsetX int
+	OffsetY int
 }
+
 type ButtonHoverEventArgs struct {
 	Button  *Button
 	Entered bool
 }
+
 type ButtonChangedEventArgs struct {
-	Button *Button
-	State  WidgetState
+	Button  *Button
+	State   WidgetState
+	OffsetX int
+	OffsetY int
 }
+
 type ButtonPressedHandlerFunc func(args *ButtonPressedEventArgs)
 
 type ButtonReleasedHandlerFunc func(args *ButtonReleasedEventArgs)
@@ -124,6 +133,8 @@ func NewButton(opts ...ButtonOpt) *Button {
 		StateChangedEvent:  &event.Event{},
 
 		init: &MultiOnce{},
+
+		focusMap: make(map[FocusDirection]Focuser),
 	}
 
 	b.init.Append(b.createWidget)
@@ -132,7 +143,33 @@ func NewButton(opts ...ButtonOpt) *Button {
 		o(b)
 	}
 
+	b.validate()
+
 	return b
+}
+
+func (b *Button) validate() {
+	if b.Image == nil {
+		panic("Button: Image is required.")
+	}
+	if b.Image.Idle == nil {
+		panic("Button: Image.Idle is required.")
+	}
+	if b.Image.Pressed == nil {
+		panic("Button: Image.Pressed is required.")
+	}
+
+	if len(b.textLabel) > 0 {
+		if b.textFace == nil {
+			panic("Button: TextFace is required if TextLabel is set.")
+		}
+		if b.TextColor == nil {
+			panic("Button: TextColor is required if TextLabel is set.")
+		}
+		if b.TextColor.Idle == nil {
+			panic("Button: TextColor.Idle is required if TextLabel is set.")
+		}
+	}
 }
 
 func (o ButtonOptions) WidgetOpts(opts ...WidgetOpt) ButtonOpt {
@@ -348,8 +385,10 @@ func (b *Button) SetState(state WidgetState) {
 		b.state = state
 
 		b.StateChangedEvent.Fire(&ButtonChangedEventArgs{
-			Button: b,
-			State:  b.state,
+			Button:  b,
+			State:   b.state,
+			OffsetX: -1,
+			OffsetY: -1,
 		})
 	}
 }
@@ -364,6 +403,8 @@ func (b *Button) Configure(opts ...ButtonOpt) {
 	}
 }
 
+/** Focuser Interface - Start **/
+
 func (b *Button) Focus(focused bool) {
 	b.init.Do()
 	b.GetWidget().FireFocusEvent(b, focused, img.Point{-1, -1})
@@ -377,6 +418,16 @@ func (b *Button) IsFocused() bool {
 func (b *Button) TabOrder() int {
 	return b.tabOrder
 }
+
+func (b *Button) GetFocus(direction FocusDirection) Focuser {
+	return b.focusMap[direction]
+}
+
+func (b *Button) AddFocus(direction FocusDirection, focus Focuser) {
+	b.focusMap[direction] = focus
+}
+
+/** Focuser Interface - End **/
 
 func (b *Button) GetWidget() *Widget {
 	b.init.Do()
@@ -452,7 +503,7 @@ func (b *Button) Render(screen *ebiten.Image, def DeferredRenderFunc) {
 
 	if b.autoUpdateTextAndGraphic {
 		if b.graphic != nil {
-			if b.widget.Disabled {
+			if b.widget.Disabled && b.GraphicImage.Disabled != nil {
 				b.graphic.Image = b.GraphicImage.Disabled
 			} else {
 				b.graphic.Image = b.GraphicImage.Idle
@@ -460,7 +511,7 @@ func (b *Button) Render(screen *ebiten.Image, def DeferredRenderFunc) {
 		}
 
 		if b.text != nil {
-			if b.widget.Disabled {
+			if b.widget.Disabled && b.TextColor.Disabled != nil {
 				b.text.Color = b.TextColor.Disabled
 			} else {
 				b.text.Color = b.TextColor.Idle
@@ -508,10 +559,14 @@ func (b *Button) draw(screen *ebiten.Image) {
 	}
 }
 
-func (b *Button) Submit() {
+func (b *Button) Click() {
+	b.init.Do()
+
 	b.justSubmitted = true
 	b.ClickedEvent.Fire(&ButtonClickedEventArgs{
-		Button: b,
+		Button:  b,
+		OffsetX: -1,
+		OffsetY: -1,
 	})
 	if b.ToggleMode {
 		if b.state == WidgetUnchecked {
@@ -520,8 +575,10 @@ func (b *Button) Submit() {
 			b.state = WidgetUnchecked
 		}
 		b.StateChangedEvent.Fire(&ButtonChangedEventArgs{
-			Button: b,
-			State:  b.state,
+			Button:  b,
+			State:   b.state,
+			OffsetX: -1,
+			OffsetY: -1,
 		})
 	}
 }
@@ -529,7 +586,7 @@ func (b *Button) Submit() {
 func (b *Button) handleSubmit() {
 	if input.KeyPressed(ebiten.KeyEnter) || input.KeyPressed(ebiten.KeySpace) {
 		if !b.justSubmitted && b.focused {
-			b.Submit()
+			b.Click()
 		}
 	} else {
 		b.justSubmitted = false
@@ -571,6 +628,7 @@ func (b *Button) initText() {
 	b.container.AddChild(b.text)
 
 	b.autoUpdateTextAndGraphic = true
+
 }
 
 func (b *Button) createWidget() {
@@ -616,7 +674,9 @@ func (b *Button) createWidget() {
 
 				if args.Inside {
 					b.ClickedEvent.Fire(&ButtonClickedEventArgs{
-						Button: b,
+						Button:  b,
+						OffsetX: args.OffsetX,
+						OffsetY: args.OffsetY,
 					})
 					if b.ToggleMode {
 						if b.state == WidgetUnchecked {
@@ -625,8 +685,10 @@ func (b *Button) createWidget() {
 							b.state = WidgetUnchecked
 						}
 						b.StateChangedEvent.Fire(&ButtonChangedEventArgs{
-							Button: b,
-							State:  b.state,
+							Button:  b,
+							State:   b.state,
+							OffsetX: args.OffsetX,
+							OffsetY: args.OffsetY,
 						})
 					}
 				}

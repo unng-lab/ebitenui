@@ -106,10 +106,28 @@ type Renderer interface {
 	Render(screen *ebiten.Image, def DeferredRenderFunc)
 }
 
+type FocusDirection int
+
+const (
+	FOCUS_NEXT FocusDirection = iota
+	FOCUS_PREVIOUS
+	FOCUS_NORTH
+	FOCUS_NORTHEAST
+	FOCUS_EAST
+	FOCUS_SOUTHEAST
+	FOCUS_SOUTH
+	FOCUS_SOUTHWEST
+	FOCUS_WEST
+	FOCUS_NORTHWEST
+)
+
 type Focuser interface {
+	HasWidget
 	Focus(focused bool)
 	IsFocused() bool
 	TabOrder() int
+	GetFocus(direction FocusDirection) Focuser
+	AddFocus(direction FocusDirection, focus Focuser)
 }
 
 type Dropper interface {

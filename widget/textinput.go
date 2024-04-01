@@ -55,6 +55,7 @@ type TextInput struct {
 	allowDuplicateSubmit  bool
 	previousSubmittedText *string
 	tabOrder              int
+	focusMap              map[FocusDirection]Focuser
 }
 
 type TextInputOpt func(t *TextInput)
@@ -124,6 +125,7 @@ func NewTextInput(opts ...TextInputOpt) *TextInput {
 		renderBuf:     image.NewMaskedRenderBuffer(),
 
 		mobileInputMode: jsUtil.TEXT,
+		focusMap:        make(map[FocusDirection]Focuser),
 	}
 	t.state = t.idleState(true)
 
@@ -141,7 +143,27 @@ func NewTextInput(opts ...TextInputOpt) *TextInput {
 		o(t)
 	}
 
+	t.validate()
+
 	return t
+}
+
+func (t *TextInput) validate() {
+	if len(t.caretOpts) == 0 {
+		panic("TextInput: CaretOpts are required.")
+	}
+	if t.face == nil {
+		panic("TextInput: Font Face is required.")
+	}
+	if t.color == nil {
+		panic("TextInput: Color is required.")
+	}
+	if t.color.Caret == nil {
+		panic("TextInput: Color.Caret is required.")
+	}
+	if t.color.Idle == nil {
+		panic("TextInput: Color.Idle is required.")
+	}
 }
 
 func (o TextInputOptions) WidgetOpts(opts ...WidgetOpt) TextInputOpt {
@@ -254,6 +276,7 @@ func (o TextInputOptions) MobileInputMode(mobileInputMode jsUtil.MobileInputMode
 }
 
 /*********** End of Configuration *****************/
+
 func (t *TextInput) GetWidget() *Widget {
 	t.init.Do()
 	return t.widget
@@ -520,7 +543,7 @@ func removeChar(r []rune, pos int) []rune {
 }
 
 func (t *TextInput) renderImage(screen *ebiten.Image) {
-	if t.image != nil {
+	if t.image != nil && t.image.Idle != nil {
 		i := t.image.Idle
 		if t.widget.Disabled && t.image.Disabled != nil {
 			i = t.image.Disabled
@@ -582,7 +605,7 @@ func (t *TextInput) drawTextAndCaret(screen *ebiten.Image, def DeferredRenderFun
 	} else {
 		t.text.Label = t.placeholderText
 	}
-	if t.widget.Disabled || len([]rune(t.inputText)) == 0 {
+	if (t.widget.Disabled || len([]rune(t.inputText)) == 0) && t.color.Disabled != nil {
 		t.text.Color = t.color.Disabled
 	} else {
 		t.text.Color = t.color.Idle
@@ -590,7 +613,7 @@ func (t *TextInput) drawTextAndCaret(screen *ebiten.Image, def DeferredRenderFun
 	t.text.Render(screen, def)
 
 	if t.focused {
-		if t.widget.Disabled {
+		if t.widget.Disabled && t.color.DisabledCaret != nil {
 			t.caret.Color = t.color.DisabledCaret
 		} else {
 			t.caret.Color = t.color.Caret
@@ -600,17 +623,6 @@ func (t *TextInput) drawTextAndCaret(screen *ebiten.Image, def DeferredRenderFun
 		t.caret.SetLocation(tr)
 
 		t.caret.Render(screen, def)
-	}
-}
-
-func (t *TextInput) Focus(focused bool) {
-	t.init.Do()
-	t.GetWidget().FireFocusEvent(t, focused, img.Point{-1, -1})
-	t.caret.resetBlinking()
-	t.focused = focused
-
-	if focused && runtime.GOOS == "js" && runtime.GOARCH == "wasm" && jsUtil.IsMobileBrowser() {
-		jsUtil.Prompt(t.mobileInputMode, "Please enter a value.", t.inputText, t.cursorPosition, t.widget.Rect.Min.Y, t.setJSText)
 	}
 }
 
@@ -658,6 +670,19 @@ func (t *TextInput) setText(text string, isJS bool) {
 	}
 }
 
+/** Focuser Interface - Start **/
+
+func (t *TextInput) Focus(focused bool) {
+	t.init.Do()
+	t.GetWidget().FireFocusEvent(t, focused, img.Point{-1, -1})
+	t.caret.resetBlinking()
+	t.focused = focused
+
+	if focused && runtime.GOOS == "js" && runtime.GOARCH == "wasm" && jsUtil.IsMobileBrowser() {
+		jsUtil.Prompt(t.mobileInputMode, "Please enter a value.", t.inputText, t.cursorPosition, t.widget.Rect.Min.Y, t.setJSText)
+	}
+}
+
 func (t *TextInput) IsFocused() bool {
 	return t.focused
 }
@@ -665,6 +690,16 @@ func (t *TextInput) IsFocused() bool {
 func (t *TextInput) TabOrder() int {
 	return t.tabOrder
 }
+
+func (t *TextInput) GetFocus(direction FocusDirection) Focuser {
+	return t.focusMap[direction]
+}
+
+func (t *TextInput) AddFocus(direction FocusDirection, focus Focuser) {
+	t.focusMap[direction] = focus
+}
+
+/** Focuser Interface - End **/
 
 func (t *TextInput) createWidget() {
 	t.widget = NewWidget(t.widgetOpts...)

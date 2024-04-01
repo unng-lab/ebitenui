@@ -44,6 +44,7 @@ type Slider struct {
 
 	tabOrder  int
 	justMoved bool
+	focusMap  map[FocusDirection]Focuser
 }
 
 type SliderTrackImage struct {
@@ -85,7 +86,8 @@ func NewSlider(opts ...SliderOpt) *Slider {
 
 		lastCurrent: 1,
 
-		init: &MultiOnce{},
+		init:     &MultiOnce{},
+		focusMap: make(map[FocusDirection]Focuser),
 	}
 
 	s.init.Append(s.createWidget)
@@ -94,7 +96,15 @@ func NewSlider(opts ...SliderOpt) *Slider {
 		o(s)
 	}
 
+	s.validate()
+
 	return s
+}
+
+func (s *Slider) validate() {
+	if len(s.handleOpts) == 0 {
+		panic("Slider: HandleImage is required.")
+	}
 }
 
 func (o SliderOptions) WidgetOpts(opts ...WidgetOpt) SliderOpt {
@@ -109,10 +119,29 @@ func (o SliderOptions) Direction(d Direction) SliderOpt {
 	}
 }
 
+// This sets the track images (not required) and the handle images (required)
 func (o SliderOptions) Images(track *SliderTrackImage, handle *ButtonImage) SliderOpt {
 	return func(s *Slider) {
 		s.trackImage = track
-		s.handleOpts = append(s.handleOpts, ButtonOpts.Image(handle))
+		if handle != nil && len(s.handleOpts) == 0 {
+			s.handleOpts = append(s.handleOpts, ButtonOpts.Image(handle))
+		}
+	}
+}
+
+// This sets the track images (not required)
+func (o SliderOptions) TrackImage(track *SliderTrackImage) SliderOpt {
+	return func(s *Slider) {
+		s.trackImage = track
+	}
+}
+
+// This sets the handle images (required)
+func (o SliderOptions) HandleImage(handle *ButtonImage) SliderOpt {
+	return func(s *Slider) {
+		if handle != nil && len(s.handleOpts) == 0 {
+			s.handleOpts = append(s.handleOpts, ButtonOpts.Image(handle))
+		}
 	}
 }
 
@@ -172,6 +201,8 @@ func (o SliderOptions) DisableDefaultKeys(val bool) SliderOpt {
 	}
 }
 
+/** Focuser Interface - Start **/
+
 func (s *Slider) Focus(focused bool) {
 	s.init.Do()
 	s.GetWidget().FireFocusEvent(s, focused, img.Point{-1, -1})
@@ -185,6 +216,16 @@ func (s *Slider) IsFocused() bool {
 func (s *Slider) TabOrder() int {
 	return s.tabOrder
 }
+
+func (s *Slider) GetFocus(direction FocusDirection) Focuser {
+	return s.focusMap[direction]
+}
+
+func (s *Slider) AddFocus(direction FocusDirection, focus Focuser) {
+	s.focusMap[direction] = focus
+}
+
+/** Focuser Interface - End **/
 
 func (s *Slider) GetWidget() *Widget {
 	s.init.Do()
@@ -241,7 +282,7 @@ func (s *Slider) Render(screen *ebiten.Image, def DeferredRenderFunc) {
 
 	s.widget.Render(screen, def)
 
-	s.draw(screen)
+	s.drawTrack(screen)
 
 	hl, tl := s.handleLengthAndTrackLength()
 	s.updateHandleLocation(hl, tl)
@@ -254,26 +295,28 @@ func (s *Slider) Render(screen *ebiten.Image, def DeferredRenderFunc) {
 	s.lastCurrent = s.Current
 }
 
-func (s *Slider) draw(screen *ebiten.Image) {
-	i := s.trackImage.Idle
-	if s.widget.Disabled || s.DrawTrackDisabled {
-		if s.trackImage.Disabled != nil {
-			i = s.trackImage.Disabled
-		}
-	} else if s.hovering {
-		if s.trackImage.Hover != nil {
-			i = s.trackImage.Hover
-		}
-	}
-
-	if i != nil {
-		i.Draw(screen, s.widget.Rect.Dx(), s.widget.Rect.Dy(), func(opts *ebiten.DrawImageOptions) {
-			if s.direction == DirectionHorizontal {
-				opts.GeoM.Translate(float64(s.widget.Rect.Min.X), float64(s.widget.Rect.Min.Y+s.trackOffset))
-			} else {
-				opts.GeoM.Translate(float64(s.widget.Rect.Min.X+s.trackOffset), float64(s.widget.Rect.Min.Y))
+func (s *Slider) drawTrack(screen *ebiten.Image) {
+	if s.trackImage != nil {
+		i := s.trackImage.Idle
+		if s.widget.Disabled || s.DrawTrackDisabled {
+			if s.trackImage.Disabled != nil {
+				i = s.trackImage.Disabled
 			}
-		})
+		} else if s.hovering {
+			if s.trackImage.Hover != nil {
+				i = s.trackImage.Hover
+			}
+		}
+
+		if i != nil {
+			i.Draw(screen, s.widget.Rect.Dx(), s.widget.Rect.Dy(), func(opts *ebiten.DrawImageOptions) {
+				if s.direction == DirectionHorizontal {
+					opts.GeoM.Translate(float64(s.widget.Rect.Min.X), float64(s.widget.Rect.Min.Y+s.trackOffset))
+				} else {
+					opts.GeoM.Translate(float64(s.widget.Rect.Min.X+s.trackOffset), float64(s.widget.Rect.Min.Y))
+				}
+			})
+		}
 	}
 }
 

@@ -19,6 +19,8 @@ type Checkbox struct {
 	state  WidgetState
 
 	tabOrder int
+
+	focusMap map[FocusDirection]Focuser
 }
 
 type CheckboxOpt func(c *Checkbox)
@@ -46,6 +48,8 @@ func NewCheckbox(opts ...CheckboxOpt) *Checkbox {
 		StateChangedEvent: &event.Event{},
 
 		init: &MultiOnce{},
+
+		focusMap: make(map[FocusDirection]Focuser),
 	}
 
 	c.init.Append(c.createWidget)
@@ -54,7 +58,31 @@ func NewCheckbox(opts ...CheckboxOpt) *Checkbox {
 		o(c)
 	}
 
+	c.validate()
+
 	return c
+}
+
+func (c *Checkbox) validate() {
+	if len(c.buttonOpts) == 0 {
+		panic("Checkbox: ButtonOpts are required.")
+	}
+	if c.image == nil {
+		panic("Checkbox: Image is required.")
+	}
+	if c.image.Checked == nil {
+		panic("Checkbox: Image.Checked is required.")
+	}
+	if c.image.Checked.Idle == nil {
+		panic("Checkbox: Image.Checked.Idle is required.")
+	}
+
+	if c.image.Unchecked == nil {
+		panic("Checkbox: Image.Unchecked is required.")
+	}
+	if c.image.Unchecked.Idle == nil {
+		panic("Checkbox: Image.Unchecked.Idle is required.")
+	}
 }
 
 func (o CheckboxOptions) ButtonOpts(opts ...ButtonOpt) CheckboxOpt {
@@ -140,6 +168,8 @@ func (c *Checkbox) Render(screen *ebiten.Image, def DeferredRenderFunc) {
 	c.button.Render(screen, def)
 }
 
+/** Focuser Interface - Start **/
+
 func (c *Checkbox) Focus(focused bool) {
 	c.init.Do()
 	c.GetWidget().FireFocusEvent(c, focused, image.Point{-1, -1})
@@ -152,6 +182,21 @@ func (c *Checkbox) IsFocused() bool {
 
 func (c *Checkbox) TabOrder() int {
 	return c.tabOrder
+}
+
+func (c *Checkbox) GetFocus(direction FocusDirection) Focuser {
+	return c.focusMap[direction]
+}
+
+func (c *Checkbox) AddFocus(direction FocusDirection, focus Focuser) {
+	c.focusMap[direction] = focus
+}
+
+/** Focuser Interface - End **/
+
+func (c *Checkbox) Click() {
+	c.init.Do()
+	c.button.Click()
 }
 
 func (c *Checkbox) createWidget() {
