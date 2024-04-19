@@ -4,14 +4,15 @@ import (
 	"image/color"
 	"log"
 
-	"github.com/ebitenui/ebitenui"
-	"github.com/ebitenui/ebitenui/image"
-	"github.com/ebitenui/ebitenui/widget"
 	"github.com/golang/freetype/truetype"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/gofont/goregular"
+
+	"github.com/ebitenui/ebitenui"
+	"github.com/ebitenui/ebitenui/image"
+	"github.com/ebitenui/ebitenui/widget"
 )
 
 // Game object used by ebiten
@@ -129,7 +130,7 @@ func main() {
 
 	// Ebiten setup
 	ebiten.SetWindowSize(400, 400)
-	ebiten.SetWindowTitle("Ebiten UI - Manual Focus")
+	ebiten.SetWindowTitle("Ebiten UI - Manual Focused")
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 
 	game := game{
