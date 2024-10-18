@@ -15,7 +15,9 @@ type GridLayout struct {
 	rowSpacing    int
 	columnStretch []bool
 	rowStretch    []bool
-	inverted      bool
+
+	defaultColumnStretch bool
+	defaultRowStretch    bool
 }
 
 // GridLayoutOpt is a function that configures g.
@@ -37,9 +39,6 @@ type GridLayoutData struct {
 
 	// VerticalPosition specifies the vertical anchoring position inside the grid cell.
 	VerticalPosition GridLayoutPosition
-
-	// Inverted specifies if the layout should be inverted.
-	Inverted bool
 }
 
 // GridLayoutPosition is the type used to specify an anchoring position.
@@ -67,7 +66,15 @@ func NewGridLayout(opts ...GridLayoutOpt) *GridLayout {
 		o(g)
 	}
 
+	g.validate()
+
 	return g
+}
+
+func (gl *GridLayout) validate() {
+	if gl.columns == 0 {
+		panic("GridLayout: columns is required.")
+	}
 }
 
 // Columns configures a grid layout to use c columns.
@@ -102,6 +109,15 @@ func (o GridLayoutOptions) Stretch(c []bool, r []bool) GridLayoutOpt {
 	}
 }
 
+// DefaultStretch will set the stretch value to the columns/rows that are
+// extra not defined on the main Stretch
+func (o GridLayoutOptions) DefaultStretch(c bool, r bool) GridLayoutOpt {
+	return func(g *GridLayout) {
+		g.defaultColumnStretch = c
+		g.defaultRowStretch = r
+	}
+}
+
 // PreferredSize implements Layouter.
 func (g *GridLayout) PreferredSize(widgets []PreferredSizeLocateableWidget) (int, int) {
 	colWidths, rowHeights := g.preferredColumnWidthsAndRowHeights(widgets)
@@ -120,11 +136,16 @@ func (g *GridLayout) Layout(widgets []PreferredSizeLocateableWidget, rect image.
 	x, y := 0, 0
 	firstStretchedCol, firstStretchedRow := true, true
 	for _, w := range widgets {
+		cw := colWidths[c]
 		if w.GetWidget().Visibility == Visibility_Hide {
+			c++
+			continue
+		} else if w.GetWidget().Visibility == Visibility_Hide {
+			c++
+			x += cw + g.columnSpacing
 			continue
 		}
 
-		cw := colWidths[c]
 		if g.columnStretched(c) {
 			cw = stretchedColWidth
 			if firstStretchedCol {
@@ -202,11 +223,17 @@ func (g *GridLayout) stretchedCellSizes(colWidths []int, rowHeights []int, rect 
 }
 
 func (g *GridLayout) columnStretched(c int) bool {
-	return g.columnStretch != nil && c < len(g.columnStretch) && g.columnStretch[c]
+	if c >= len(g.columnStretch) {
+		return g.defaultColumnStretch
+	}
+	return g.columnStretch[c]
 }
 
 func (g *GridLayout) rowStretched(r int) bool {
-	return g.rowStretch != nil && r < len(g.rowStretch) && g.rowStretch[r]
+	if r >= len(g.rowStretch) {
+		return g.defaultRowStretch
+	}
+	return g.rowStretch[r]
 }
 
 func (g *GridLayout) preferredColumnWidthsAndRowHeights(widgets []PreferredSizeLocateableWidget) ([]int, []int) {
@@ -259,7 +286,7 @@ func (g *GridLayout) applyLayoutData(ld GridLayoutData, wx int, wy int, ww int, 
 
 	switch ld.VerticalPosition {
 	case GridLayoutPositionCenter:
-		wy = x + (ch-wh)/2
+		wy = y + (ch-wh)/2
 	case GridLayoutPositionEnd:
 		wy = y + ch - wh
 	}

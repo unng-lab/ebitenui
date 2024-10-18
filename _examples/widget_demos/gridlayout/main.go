@@ -32,27 +32,27 @@ func main() {
 			widget.GridLayoutOpts.Padding(widget.NewInsetsSimple(30)),
 			//Define how far apart the rows and columns should be
 			widget.GridLayoutOpts.Spacing(20, 10),
-			//Define how to stretch the rows and columns. Note it is required to
-			//specify the Stretch for each row and column.
-			widget.GridLayoutOpts.Stretch([]bool{true, false}, []bool{false, true}),
+			// DefaultStretch values will be used when extra columns/rows are used
+			// out of the ones defined on the normal Stretch
+			widget.GridLayoutOpts.DefaultStretch(false, true),
+			//Define how to stretch the rows and columns.
+			widget.GridLayoutOpts.Stretch([]bool{true}, []bool{false}),
 		)),
 	)
 
 	innerContainer1 := widget.NewContainer(
 		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(color.NRGBA{255, 0, 0, 255})),
 		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.MinSize(100, 100),
+			widget.WidgetOpts.MinSize(50, 50),
 		),
 	)
-	rootContainer.AddChild(innerContainer1)
 
 	innerContainer2 := widget.NewContainer(
 		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(color.NRGBA{0, 255, 0, 255})),
 		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.MinSize(100, 100),
+			widget.WidgetOpts.MinSize(50, 50),
 		),
 	)
-	rootContainer.AddChild(innerContainer2)
 
 	innerContainer3 := widget.NewContainer(
 		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(color.NRGBA{0, 0, 255, 255})),
@@ -66,18 +66,23 @@ func main() {
 				MaxWidth:           100,
 				MaxHeight:          100,
 			}),
-			widget.WidgetOpts.MinSize(100, 100),
+			widget.WidgetOpts.MinSize(50, 50),
 		),
 	)
-	rootContainer.AddChild(innerContainer3)
 
 	innerContainer4 := widget.NewContainer(
 		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(color.NRGBA{0, 255, 255, 255})),
 		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.MinSize(100, 100),
+			widget.WidgetOpts.MinSize(50, 50),
 		),
 	)
-	rootContainer.AddChild(innerContainer4)
+
+	rootContainer.AddChild(
+		innerContainer1,
+		innerContainer2,
+		innerContainer3,
+		innerContainer4,
+	)
 	// construct the UI
 	ui := ebitenui.UI{
 		Container: rootContainer,

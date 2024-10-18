@@ -25,15 +25,17 @@ type DefaultInternalHandler struct {
 	LastMiddleMouseButtonPressed bool
 	LastRightMouseButtonPressed  bool
 
-	InputChars     []rune
-	KeyPressed     map[ebiten.Key]bool
-	AnyKeyPressed  bool
-	isTouched      bool
-	cursorImages   map[string]*ebiten.Image
-	cursorOffset   map[string]image.Point
+	InputChars    []rune
+	KeyPressed    map[ebiten.Key]bool
+	AnyKeyPressed bool
+	isTouched     bool
+	cursorImages  map[string]*ebiten.Image
+	cursorOffset  map[string]image.Point
 
 	touchscreenPlatform bool
 }
+
+var InternalUIHovered = false
 
 var InputHandler *DefaultInternalHandler = &DefaultInternalHandler{
 	// A touchscreenPlatform is defined as a device that doesn't have a mouse pointer,
@@ -47,9 +49,9 @@ var InputHandler *DefaultInternalHandler = &DefaultInternalHandler{
 	// input options.
 	touchscreenPlatform: jsUtil.IsMobileBrowser() || runtime.GOOS == "android" || runtime.GOOS == "ios",
 
-	KeyPressed:     make(map[ebiten.Key]bool),
-	cursorImages:   make(map[string]*ebiten.Image),
-	cursorOffset:   make(map[string]image.Point),
+	KeyPressed:   make(map[ebiten.Key]bool),
+	cursorImages: make(map[string]*ebiten.Image),
+	cursorOffset: make(map[string]image.Point),
 }
 
 // Update updates the input system. This is called by the UI.
@@ -93,10 +95,6 @@ func (handler *DefaultInternalHandler) Update() {
 			handler.AnyKeyPressed = true
 		}
 	}
-
-}
-
-func (handler *DefaultInternalHandler) Draw(screen *ebiten.Image) {
 	handler.LeftMouseButtonJustPressed = handler.LeftMouseButtonPressed && handler.LeftMouseButtonPressed != handler.LastLeftMouseButtonPressed
 	handler.MiddleMouseButtonJustPressed = handler.MiddleMouseButtonPressed && handler.MiddleMouseButtonPressed != handler.LastMiddleMouseButtonPressed
 	handler.RightMouseButtonJustPressed = handler.RightMouseButtonPressed && handler.RightMouseButtonPressed != handler.LastRightMouseButtonPressed
@@ -104,6 +102,9 @@ func (handler *DefaultInternalHandler) Draw(screen *ebiten.Image) {
 	handler.LastLeftMouseButtonPressed = handler.LeftMouseButtonPressed
 	handler.LastMiddleMouseButtonPressed = handler.MiddleMouseButtonPressed
 	handler.LastRightMouseButtonPressed = handler.RightMouseButtonPressed
+}
+
+func (handler *DefaultInternalHandler) Draw(screen *ebiten.Image) {
 
 }
 
@@ -124,6 +125,7 @@ func (handler *DefaultInternalHandler) MouseButtonPressed(b ebiten.MouseButton) 
 		return false
 	}
 }
+
 func (handler *DefaultInternalHandler) MouseButtonJustPressed(b ebiten.MouseButton) bool {
 	switch b {
 	case ebiten.MouseButtonLeft:

@@ -10,8 +10,8 @@ import (
 	"github.com/ebitenui/ebitenui/input"
 
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/hajimehoshi/ebiten/v2/text/v2"
 	"golang.org/x/exp/slices"
-	"golang.org/x/image/font"
 )
 
 type List struct {
@@ -22,7 +22,7 @@ type List struct {
 	sliderOpts                  []SliderOpt
 	entries                     []any
 	entryLabelFunc              ListEntryLabelFunc
-	entryFace                   font.Face
+	entryFace                   text.Face
 	entryUnselectedColor        *ButtonImage
 	entrySelectedColor          *ButtonImage
 	entryUnselectedTextColor    *ButtonTextColor
@@ -180,7 +180,7 @@ func (o ListOptions) EntryLabelFunc(f ListEntryLabelFunc) ListOpt {
 	}
 }
 
-func (o ListOptions) EntryFontFace(f font.Face) ListOpt {
+func (o ListOptions) EntryFontFace(f text.Face) ListOpt {
 	return func(l *List) {
 		l.entryFace = f
 	}
@@ -287,7 +287,7 @@ func (l *List) SetupInputLayer(def input.DeferredSetupInputLayerFunc) {
 	l.container.SetupInputLayer(def)
 }
 
-func (l *List) Render(screen *ebiten.Image, def DeferredRenderFunc) {
+func (l *List) Render(screen *ebiten.Image) {
 	l.init.Do()
 
 	d := l.container.GetWidget().Disabled
@@ -303,13 +303,18 @@ func (l *List) Render(screen *ebiten.Image, def DeferredRenderFunc) {
 		l.scrollVisible(l.buttons[l.focusIndex])
 	}
 
-	l.handleInput()
-
 	if l.selectFocus {
 		l.SelectFocused()
 	}
 
-	l.container.Render(screen, def)
+	l.container.Render(screen)
+}
+
+func (l *List) Update() {
+	l.init.Do()
+
+	l.handleInput()
+	l.container.Update()
 }
 
 /** Focuser Interface - Start **/
@@ -425,11 +430,14 @@ func (l *List) createWidget() {
 	}
 
 	l.container = NewContainer(
-		append(l.containerOpts,
+		append([]ContainerOpt{
+			ContainerOpts.WidgetOpts(WidgetOpts.TrackHover(true)),
 			ContainerOpts.Layout(NewGridLayout(
 				GridLayoutOpts.Columns(cols),
 				GridLayoutOpts.Stretch([]bool{true, false}, []bool{true, false}),
-				GridLayoutOpts.Spacing(l.controlWidgetSpacing, l.controlWidgetSpacing))))...)
+				GridLayoutOpts.Spacing(l.controlWidgetSpacing, l.controlWidgetSpacing),
+			))}, l.containerOpts...)...,
+	)
 
 	l.listContent = NewContainer(
 		ContainerOpts.Layout(NewRowLayout(
@@ -501,11 +509,27 @@ func (l *List) createWidget() {
 
 // Updates the entries in the list.
 // Note: Duplicates will be removed.
-func (l *List) SetEntries(entries []any) {
-	l.entries = slices.CompactFunc(entries, func(a any, b any) bool { return a == b })
+func (l *List) SetEntries(newEntries []any) {
+	//Remove old entries
+	for i := range l.entries {
+		but := l.buttons[i]
+		l.listContent.RemoveChild(but)
+	}
+	l.entries = nil
+	l.buttons = nil
+
+	//Add new Entries
+	for idx := range newEntries {
+		if !slices.ContainsFunc(l.entries, func(cmp any) bool {
+			return cmp == newEntries[idx]
+		}) {
+			l.entries = append(l.entries, newEntries[idx])
+			but := l.createEntry(newEntries[idx])
+			l.buttons = append(l.buttons, but)
+			l.listContent.AddChild(but)
+		}
+	}
 	l.selectedEntry = nil
-	l.container.RemoveChildren()
-	l.createWidget()
 	l.resetFocusIndex()
 }
 
@@ -540,7 +564,7 @@ func (l *List) RemoveEntry(entry any) {
 // Note: Duplicates will not be added
 func (l *List) AddEntry(entry any) {
 	l.init.Do()
-	if !l.checkForDuplicates(append(l.entries, entry)) {
+	if !l.checkForDuplicates(l.entries, entry) {
 		l.entries = append(l.entries, entry)
 		but := l.createEntry(entry)
 		l.buttons = append(l.buttons, but)
@@ -550,7 +574,7 @@ func (l *List) AddEntry(entry any) {
 }
 
 // Return the current entries in the list
-func (l *List) Entries() any {
+func (l *List) Entries() []any {
 	l.init.Do()
 	return l.entries
 }
@@ -590,10 +614,10 @@ func (l *List) setSelectedEntry(e any, user bool) {
 	}
 }
 
-func (l *List) checkForDuplicates(entries []any) bool {
-	entryLen := len(entries)
-	entries = slices.CompactFunc(entries, func(a any, b any) bool { return a == b })
-	return entryLen != len(entries)
+func (l *List) checkForDuplicates(entries []any, entry any) bool {
+	return slices.ContainsFunc(entries, func(cmp any) bool {
+		return cmp == entry
+	})
 }
 
 func (l *List) createEntry(entry any) *Button {

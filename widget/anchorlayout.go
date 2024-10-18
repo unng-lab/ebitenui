@@ -2,10 +2,11 @@ package widget
 
 import "image"
 
-// AnchorLayout layouts a single widget anchored to either a corner or edge of a rectangle,
+// AnchorLayout layouts widgets anchored to either a corner or edge of a rectangle,
 // optionally stretching it in one or both directions.
 //
-// AnchorLayout will only layout the first widget in a container and ignore all other widgets.
+// AnchorLayout will layout all widgets  in the container to the specified locations regardless of overlap.
+// The widgets in the container will be drawn in the order they were added to the container.
 //
 // Widget.LayoutData of widgets being layouted by AnchorLayout need to be of type AnchorLayoutData.
 type AnchorLayout struct {
@@ -34,6 +35,9 @@ type AnchorLayoutData struct {
 
 	// StretchVertical specifies whether to stretch in the vertical direction.
 	StretchVertical bool
+
+	// Sets the padding for the child.
+	Padding Insets
 }
 
 const (
@@ -61,7 +65,7 @@ func NewAnchorLayout(opts ...AnchorLayoutOpt) *AnchorLayout {
 	return a
 }
 
-// Padding configures an anchor layout to use padding i.
+// Padding configures an anchor layout to use padding i. This affects all children.
 func (o AnchorLayoutOptions) Padding(i Insets) AnchorLayoutOpt {
 	return func(a *AnchorLayout) {
 		a.padding = i
@@ -85,29 +89,32 @@ func (a *AnchorLayout) Layout(widgets []PreferredSizeLocateableWidget, rect imag
 	if len(widgets) == 0 {
 		return
 	}
+	for idx := range widgets {
+		widget := widgets[idx]
+		if widget.GetWidget().Visibility == Visibility_Hide {
+			continue
+		}
 
-	widget := widgets[0]
-	if widget.GetWidget().Visibility == Visibility_Hide {
-		return
+		ww, wh := widget.PreferredSize()
+		wrect := a.padding.Apply(rect)
+		wx := 0
+		wy := 0
+
+		if ald, ok := widget.GetWidget().LayoutData.(AnchorLayoutData); ok {
+			wrect = ald.Padding.Apply(wrect)
+			wx, wy, ww, wh = a.applyLayoutData(ald, wx, wy, ww, wh, wrect)
+		}
+
+		r := image.Rect(0, 0, ww, wh)
+		r = r.Add(image.Point{wx, wy})
+		r = r.Add(wrect.Min)
+
+		widget.SetLocation(r)
 	}
-
-	ww, wh := widget.PreferredSize()
-	rect = a.padding.Apply(rect)
-	wx := 0
-	wy := 0
-
-	if ald, ok := widget.GetWidget().LayoutData.(AnchorLayoutData); ok {
-		wx, wy, ww, wh = a.applyLayoutData(ald, wx, wy, ww, wh, rect)
-	}
-
-	r := image.Rect(0, 0, ww, wh)
-	r = r.Add(image.Point{wx, wy})
-	r = r.Add(rect.Min)
-
-	widget.SetLocation(r)
 }
 
 func (a *AnchorLayout) applyLayoutData(ld AnchorLayoutData, wx int, wy int, ww int, wh int, rect image.Rectangle) (int, int, int, int) {
+
 	if ld.StretchHorizontal {
 		ww = rect.Dx()
 	}

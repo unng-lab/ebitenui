@@ -8,14 +8,14 @@ import (
 	"github.com/ebitenui/ebitenui/input"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	"golang.org/x/image/font"
+	"github.com/hajimehoshi/ebiten/v2/text/v2"
 )
 
 type TextArea struct {
 	containerOpts        []ContainerOpt
 	scrollContainerOpts  []ScrollContainerOpt
 	sliderOpts           []SliderOpt
-	face                 font.Face
+	face                 text.Face
 	foregroundColor      color.Color
 	textPadding          Insets
 	controlWidgetSpacing int
@@ -153,7 +153,7 @@ func (o TextAreaOptions) HorizontalScrollMode(scrollMode ScrollMode) TextAreaOpt
 }
 
 // Set the font face for this text area
-func (o TextAreaOptions) FontFace(f font.Face) TextAreaOpt {
+func (o TextAreaOptions) FontFace(f text.Face) TextAreaOpt {
 	return func(l *TextArea) {
 		l.face = f
 	}
@@ -232,7 +232,7 @@ func (l *TextArea) GetFocusers() []Focuser {
 	return result
 }
 
-func (l *TextArea) Render(screen *ebiten.Image, def DeferredRenderFunc) {
+func (l *TextArea) Render(screen *ebiten.Image) {
 	l.init.Do()
 
 	d := l.container.GetWidget().Disabled
@@ -245,7 +245,14 @@ func (l *TextArea) Render(screen *ebiten.Image, def DeferredRenderFunc) {
 	}
 	l.text.MaxWidth = float64(l.container.GetWidget().Rect.Dx())
 	l.scrollContainer.GetWidget().Disabled = d
-	l.container.Render(screen, def)
+	l.container.Render(screen)
+}
+
+func (l *TextArea) Update() {
+	l.init.Do()
+	if l.container != nil {
+		l.container.Update()
+	}
 }
 
 func (l *TextArea) createWidget() {
@@ -257,11 +264,14 @@ func (l *TextArea) createWidget() {
 	}
 
 	l.container = NewContainer(
-		append(l.containerOpts,
+		append([]ContainerOpt{
+			ContainerOpts.WidgetOpts(WidgetOpts.TrackHover(true)),
 			ContainerOpts.Layout(NewGridLayout(
 				GridLayoutOpts.Columns(cols),
 				GridLayoutOpts.Stretch([]bool{true, false}, []bool{true, false}),
-				GridLayoutOpts.Spacing(l.controlWidgetSpacing, l.controlWidgetSpacing))))...)
+				GridLayoutOpts.Spacing(l.controlWidgetSpacing, l.controlWidgetSpacing))),
+		}, l.containerOpts...,
+		)...)
 	l.containerOpts = nil
 
 	content := NewContainer(

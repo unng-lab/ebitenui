@@ -1,18 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"image/color"
 	"log"
-
-	"github.com/golang/freetype/truetype"
-	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/inpututil"
-	"golang.org/x/image/font"
-	"golang.org/x/image/font/gofont/goregular"
 
 	"github.com/ebitenui/ebitenui"
 	"github.com/ebitenui/ebitenui/image"
 	"github.com/ebitenui/ebitenui/widget"
+	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/hajimehoshi/ebiten/v2/inpututil"
+	"github.com/hajimehoshi/ebiten/v2/text/v2"
+	"golang.org/x/image/font/gofont/goregular"
 )
 
 // Game object used by ebiten
@@ -21,7 +20,7 @@ type game struct {
 }
 
 var buttonImage *widget.ButtonImage
-var face font.Face
+var face text.Face
 
 /*
 The Grid Layout is built to position children in a rows and columns.
@@ -130,7 +129,7 @@ func main() {
 
 	// Ebiten setup
 	ebiten.SetWindowSize(400, 400)
-	ebiten.SetWindowTitle("Ebiten UI - Manual Focused")
+	ebiten.SetWindowTitle("Ebiten UI - Manual Focus")
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 
 	game := game{
@@ -240,15 +239,15 @@ func loadButtonImage() (*widget.ButtonImage, error) {
 	}, nil
 }
 
-func loadFont(size float64) (font.Face, error) {
-	ttfFont, err := truetype.Parse(goregular.TTF)
+func loadFont(size float64) (text.Face, error) {
+	s, err := text.NewGoTextFaceSource(bytes.NewReader(goregular.TTF))
 	if err != nil {
+		log.Fatal(err)
 		return nil, err
 	}
 
-	return truetype.NewFace(ttfFont, &truetype.Options{
-		Size:    size,
-		DPI:     72,
-		Hinting: font.HintingFull,
-	}), nil
+	return &text.GoTextFace{
+		Source: s,
+		Size:   size,
+	}, nil
 }

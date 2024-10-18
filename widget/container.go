@@ -57,6 +57,9 @@ func (o ContainerOptions) WidgetOpts(opts ...WidgetOpt) ContainerOpt {
 	}
 }
 
+// This will set the background image to the provided NineSlice. If this is set then
+// we will automatically track that the UI has been hovered over for this container
+// Use widget.WidgetOpts.TrackHover(false) to turn this off if desired.
 func (o ContainerOptions) BackgroundImage(i *image.NineSlice) ContainerOpt {
 	return func(c *Container) {
 		c.BackgroundImage = i
@@ -75,38 +78,42 @@ func (o ContainerOptions) Layout(layout Layouter) ContainerOpt {
 	}
 }
 
-func (c *Container) AddChild(child PreferredSizeLocateableWidget) RemoveChildFunc {
+func (c *Container) AddChild(children ...PreferredSizeLocateableWidget) RemoveChildFunc {
 	c.init.Do()
 
-	if child == nil {
-		panic("cannot add nil child")
+	for _, child := range children {
+		if child == nil {
+			panic("cannot add nil child")
+		}
+
+		c.children = append(c.children, child)
+
+		child.GetWidget().parent = c.widget
+		child.GetWidget().self = child
+
+		child.GetWidget().ContextMenuEvent.AddHandler(func(args interface{}) {
+			a := args.(*WidgetContextMenuEventArgs)
+			c.GetWidget().FireContextMenuEvent(a.Widget, a.Location)
+		})
+		child.GetWidget().FocusEvent.AddHandler(func(args interface{}) {
+			a := args.(*WidgetFocusEventArgs)
+			c.GetWidget().FireFocusEvent(a.Widget, a.Focused, a.Location)
+		})
+		child.GetWidget().ToolTipEvent.AddHandler(func(args interface{}) {
+			a := args.(*WidgetToolTipEventArgs)
+			c.GetWidget().FireToolTipEvent(a.Window, a.Show)
+		})
+		child.GetWidget().DragAndDropEvent.AddHandler(func(args interface{}) {
+			a := args.(*WidgetDragAndDropEventArgs)
+			c.GetWidget().FireDragAndDropEvent(a.Window, a.Show, a.DnD)
+		})
+		c.RequestRelayout()
 	}
 
-	c.children = append(c.children, child)
-
-	child.GetWidget().parent = c.widget
-	child.GetWidget().self = child
-
-	child.GetWidget().ContextMenuEvent.AddHandler(func(args interface{}) {
-		a := args.(*WidgetContextMenuEventArgs)
-		c.GetWidget().FireContextMenuEvent(a.Widget, a.Location)
-	})
-	child.GetWidget().FocusEvent.AddHandler(func(args interface{}) {
-		a := args.(*WidgetFocusEventArgs)
-		c.GetWidget().FireFocusEvent(a.Widget, a.Focused, a.Location)
-	})
-	child.GetWidget().ToolTipEvent.AddHandler(func(args interface{}) {
-		a := args.(*WidgetToolTipEventArgs)
-		c.GetWidget().FireToolTipEvent(a.Window, a.Show)
-	})
-	child.GetWidget().DragAndDropEvent.AddHandler(func(args interface{}) {
-		a := args.(*WidgetDragAndDropEventArgs)
-		c.GetWidget().FireDragAndDropEvent(a.Window, a.Show, a.DnD)
-	})
-	c.RequestRelayout()
-
 	return func() {
-		c.RemoveChild(child)
+		for _, child := range children {
+			c.RemoveChild(child)
+		}
 	}
 }
 
@@ -186,17 +193,33 @@ func (c *Container) GetWidget() *Widget {
 
 func (c *Container) PreferredSize() (int, int) {
 	c.init.Do()
+	w, h := 0, 0
 
-	if c.layout == nil {
-		return 50, 50
+	//Start with the background image min size if one is set
+	if c.BackgroundImage != nil {
+		w, h = c.BackgroundImage.MinSize()
 	}
-	w, h := c.layout.PreferredSize(c.children)
+
+	// If the preferred layout for the children is greater than the background image
+	// min size then use that
+	if c.layout != nil {
+		pW, pH := c.layout.PreferredSize(c.children)
+		if pW > w {
+			w = pW
+		}
+		if pH > h {
+			h = pH
+		}
+	}
+
+	// If the set MinHeight or MinWidth are greater than calculated, use that
 	if c.widget != nil && h < c.widget.MinHeight {
 		h = c.widget.MinHeight
 	}
 	if c.widget != nil && w < c.widget.MinWidth {
 		w = c.widget.MinWidth
 	}
+
 	return w, h
 }
 
@@ -206,10 +229,10 @@ func (c *Container) SetLocation(rect img.Rectangle) {
 	c.RequestRelayout()
 }
 
-func (c *Container) Render(screen *ebiten.Image, def DeferredRenderFunc) {
+func (c *Container) Render(screen *ebiten.Image) {
 	c.init.Do()
 
-	if c.widget.Visibility == Visibility_Hide_Blocking || c.widget.Visibility == Visibility_Hide {
+	if !c.widget.IsVisible() {
 		return
 	}
 
@@ -219,7 +242,7 @@ func (c *Container) Render(screen *ebiten.Image, def DeferredRenderFunc) {
 		}
 	}
 
-	c.widget.Render(screen, def)
+	c.widget.Render(screen)
 
 	c.doLayout()
 
@@ -227,10 +250,23 @@ func (c *Container) Render(screen *ebiten.Image, def DeferredRenderFunc) {
 
 	for _, ch := range c.children {
 		if cr, ok := ch.(Renderer); ok {
-			if ch.GetWidget().Visibility == Visibility_Hide_Blocking || ch.GetWidget().Visibility == Visibility_Hide {
+			if !ch.GetWidget().IsVisible() {
 				continue
 			}
-			cr.Render(screen, def)
+			cr.Render(screen)
+		}
+	}
+}
+
+func (c *Container) Update() {
+	c.init.Do()
+
+	c.widget.Update()
+
+	for _, ch := range c.children {
+		if cu, ok := ch.(Updater); ok {
+
+			cu.Update()
 		}
 	}
 }
@@ -259,7 +295,7 @@ func (c *Container) draw(screen *ebiten.Image) {
 }
 
 func (c *Container) createWidget() {
-	c.widget = NewWidget(c.widgetOpts...)
+	c.widget = NewWidget(append([]WidgetOpt{WidgetOpts.TrackHover(c.BackgroundImage != nil)}, c.widgetOpts...)...)
 	c.widgetOpts = nil
 }
 

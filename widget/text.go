@@ -11,9 +11,7 @@ import (
 	"github.com/ebitenui/ebitenui/utilities/colorutil"
 	"github.com/ebitenui/ebitenui/utilities/datastructures"
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/text"
-	"golang.org/x/image/font"
-	"golang.org/x/image/math/fixed"
+	"github.com/hajimehoshi/ebiten/v2/text/v2"
 )
 
 const bbcodeRegEx = `\[color=[0-9a-fA-F]{6}\]|\[\/color\]`
@@ -22,7 +20,7 @@ const COLOR_CLOSE = "/color]"
 
 type Text struct {
 	Label              string
-	Face               font.Face
+	Face               text.Face
 	Color              color.Color
 	MaxWidth           float64
 	Inset              Insets
@@ -52,9 +50,10 @@ type TextOptions struct {
 }
 
 type textMeasurements struct {
-	label    string
-	face     font.Face
-	maxWidth float64
+	label         string
+	face          text.Face
+	maxWidth      float64
+	processBBCode bool
 
 	lines             [][]string
 	lineWidths        []float64
@@ -106,7 +105,7 @@ func (o TextOptions) WidgetOpts(opts ...WidgetOpt) TextOpt {
 // Text combines three options: TextLabel, TextFace and TextColor.
 // It can be used for the inline configurations of Text object while
 // separate functions are useful for a multi-step configuration.
-func (o TextOptions) Text(label string, face font.Face, color color.Color) TextOpt {
+func (o TextOptions) Text(label string, face text.Face, color color.Color) TextOpt {
 	return func(t *Text) {
 		t.Label = label
 		t.Face = face
@@ -120,7 +119,7 @@ func (o TextOptions) TextLabel(label string) TextOpt {
 	}
 }
 
-func (o TextOptions) TextFace(face font.Face) TextOpt {
+func (o TextOptions) TextFace(face text.Face) TextOpt {
 	return func(t *Text) {
 		t.Face = face
 	}
@@ -171,8 +170,8 @@ func (t *Text) SetLocation(rect image.Rectangle) {
 func (t *Text) PreferredSize() (int, int) {
 	t.init.Do()
 	t.measure()
-	w := int(math.Ceil(t.measurements.boundingBoxWidth))
-	h := int(math.Ceil(t.measurements.boundingBoxHeight))
+	w := int(math.Ceil(t.measurements.boundingBoxWidth)) + t.Inset.Left + t.Inset.Right
+	h := int(math.Ceil(t.measurements.boundingBoxHeight)) + t.Inset.Top + t.Inset.Bottom
 
 	if t.widget != nil && h < t.widget.MinHeight {
 		h = t.widget.MinHeight
@@ -183,10 +182,16 @@ func (t *Text) PreferredSize() (int, int) {
 	return w, h
 }
 
-func (t *Text) Render(screen *ebiten.Image, def DeferredRenderFunc) {
+func (t *Text) Render(screen *ebiten.Image) {
 	t.init.Do()
-	t.widget.Render(screen, def)
+	t.widget.Render(screen)
 	t.draw(screen)
+}
+
+func (t *Text) Update() {
+	t.init.Do()
+
+	t.widget.Update()
 }
 
 func (t *Text) draw(screen *ebiten.Image) {
@@ -197,56 +202,69 @@ func (t *Text) draw(screen *ebiten.Image) {
 	p := r.Min
 
 	switch t.verticalPosition {
+	case TextPositionStart:
+		p = p.Add(image.Point{0, t.Inset.Top})
 	case TextPositionCenter:
-		p = p.Add(image.Point{0, int((float64(r.Dy()) - t.measurements.boundingBoxHeight) / 2)})
+		p = p.Add(image.Point{0, int((float64(r.Dy())-t.measurements.boundingBoxHeight)/2 + float64(t.Inset.Top))})
 	case TextPositionEnd:
-		p = p.Add(image.Point{0, int(float64(r.Dy()) - t.measurements.boundingBoxHeight)})
+		p = p.Add(image.Point{0, int(float64(r.Dy())-t.measurements.boundingBoxHeight) - t.Inset.Bottom})
 	}
 
 	t.colorList = &datastructures.Stack[color.Color]{}
 	t.colorList.Push(&t.Color)
 
+	sWidth, _ := text.Measure(" ", t.Face, 0)
+
 	for i, line := range t.measurements.lines {
-		ly := int(math.Round(float64(p.Y) + t.measurements.lineHeight*float64(i) + t.measurements.ascent))
-		if ly > screen.Bounds().Max.Y+int(math.Round(t.measurements.ascent)) {
+		ly := float64(p.Y) + t.measurements.lineHeight*float64(i)
+		if ly > float64(screen.Bounds().Max.Y) {
 			return
 		}
-		if ly < -int(math.Round(t.measurements.lineHeight-t.measurements.ascent)) {
+		if ly < -t.measurements.lineHeight {
 			continue
 		}
 		if t.widget.parent != nil {
-			if ly < t.widget.parent.Rect.Min.Y {
+			if ly < float64(t.widget.parent.Rect.Min.Y)-t.measurements.lineHeight {
 				continue
 			}
-			if ly-int(math.Round(t.measurements.lineHeight)) > t.widget.parent.Rect.Max.Y {
+			if ly-t.measurements.lineHeight > float64(t.widget.parent.Rect.Max.Y) {
 				return
 			}
 		}
 
-		lx := p.X
+		lx := float64(p.X)
 		switch t.horizontalPosition {
 		case TextPositionCenter:
-			lx += int(math.Round((float64(w) - t.measurements.lineWidths[i]) / 2))
+			lx += ((float64(w) - t.measurements.lineWidths[i]) / 2) + float64(t.Inset.Left)
 		case TextPositionEnd:
-			lx += int(math.Ceil(float64(w)-t.measurements.lineWidths[i])) - t.Inset.Right
+			lx += float64(w) - t.measurements.lineWidths[i] - float64(t.Inset.Right)
 		default:
-			lx += t.Inset.Left
+			lx += float64(t.Inset.Left)
 		}
 
 		if t.processBBCode {
-			spaceWidth := font.MeasureString(t.Face, " ").Round()
+
 			for _, word := range line {
 				pieces, updatedColor := t.handleBBCodeColor(word)
 				for _, piece := range pieces {
-					text.Draw(screen, piece.text, t.Face, lx, ly, piece.color)
-					wordWidth := font.MeasureString(t.Face, piece.text)
-					lx += wordWidth.Round()
+					op := &text.DrawOptions{}
+					op.GeoM.Translate(lx, ly)
+					op.ColorScale.ScaleWithColor(piece.color)
+					text.Draw(screen, piece.text, t.Face, op)
+					wordWidth, _ := text.Measure(piece.text, t.Face, 0)
+					lx += float64(wordWidth)
 				}
-				text.Draw(screen, " ", t.Face, lx, ly, updatedColor)
-				lx += spaceWidth
+				op := &text.DrawOptions{}
+				op.GeoM.Translate(lx, ly)
+				op.ColorScale.ScaleWithColor(updatedColor)
+				text.Draw(screen, " ", t.Face, op)
+				lx += sWidth
 			}
 		} else {
-			text.Draw(screen, strings.Join(line, " "), t.Face, lx, ly, t.Color)
+			op := &text.DrawOptions{}
+			op.GeoM.Translate(lx, ly)
+			op.ColorScale.ScaleWithColor(t.Color)
+			text.Draw(screen, strings.Join(line, " "), t.Face, op)
 		}
 	}
 }
@@ -258,10 +276,15 @@ func (t *Text) handleBBCodeColor(word string) ([]bbCodeText, color.Color) {
 	if len(tags) > 0 {
 		resultStr := ""
 		isTag := false
-		for idx := range word {
+		// idx is a byte offset inside a utf8-encoded string,
+		// so it's correct for multi-byte runes (it can go like 0, 2, 4, ...);
+		// the word[idx] result is a single byte (not a proper rune),
+		// therefore a 2-value range is needed here to preserve a
+		// full multi-byte rune value.
+		for idx, ch := range word {
 			if len(tags) > 0 {
 				if tags[0][0] > idx || (isTag && idx < tags[0][1]) {
-					resultStr = resultStr + string(word[idx])
+					resultStr = resultStr + string(ch)
 				} else if tags[0][1] == idx {
 					if strings.HasPrefix(resultStr, COLOR_OPEN) {
 						c, err := colorutil.HexToColor(resultStr[6:12])
@@ -280,7 +303,7 @@ func (t *Text) handleBBCodeColor(word string) ([]bbCodeText, color.Color) {
 						resultStr = ""
 						isTag = true
 					} else {
-						resultStr = string(word[idx])
+						resultStr = string(ch)
 						isTag = false
 					}
 				} else {
@@ -289,7 +312,7 @@ func (t *Text) handleBBCodeColor(word string) ([]bbCodeText, color.Color) {
 					isTag = true
 				}
 			} else {
-				resultStr = resultStr + string(word[idx])
+				resultStr = resultStr + string(ch)
 			}
 		}
 		if len(resultStr) > 0 {
@@ -318,41 +341,49 @@ func (t *Text) handleBBCodeColor(word string) ([]bbCodeText, color.Color) {
 }
 
 func (t *Text) measure() {
-	if t.Label == t.measurements.label && t.Face == t.measurements.face && t.MaxWidth == t.measurements.maxWidth {
+	if t.Label == t.measurements.label && t.Face == t.measurements.face && t.MaxWidth == t.measurements.maxWidth && t.processBBCode == t.measurements.processBBCode {
 		return
 	}
 	m := t.Face.Metrics()
 
 	t.measurements = textMeasurements{
-		label:    t.Label,
-		face:     t.Face,
-		ascent:   fixedInt26_6ToFloat64(m.Ascent),
-		maxWidth: t.MaxWidth,
+		label:         t.Label,
+		face:          t.Face,
+		processBBCode: t.processBBCode,
+		ascent:        m.HAscent,
+		maxWidth:      t.MaxWidth,
 	}
 
-	fh := fixedInt26_6ToFloat64(m.Ascent + m.Descent)
-	t.measurements.lineHeight = fixedInt26_6ToFloat64(m.Height)
+	sWidth, sHeight := text.Measure(" ", t.measurements.face, 0)
+
+	fh := m.HAscent + m.HDescent
+	t.measurements.lineHeight = sHeight
 	ld := t.measurements.lineHeight - fh
 
 	s := bufio.NewScanner(strings.NewReader(t.Label))
 	for s.Scan() {
-		if t.MaxWidth > 0 {
+		if t.MaxWidth > 0 || t.processBBCode {
 			var newLine []string
 			newLineWidth := float64(t.Inset.Left + t.Inset.Right)
-			words := strings.Split(s.Text(), " ")
-			for _, word := range words {
-				wordWidth := fixedInt26_6ToFloat64(font.MeasureString(t.Face, word+" "))
 
-				// Strip out any bbcodes from size calculation
-				if t.processBBCode {
-					if t.bbcodeRegex.MatchString(word) {
-						cleaned := t.bbcodeRegex.ReplaceAllString(word, "")
-						wordWidth = fixedInt26_6ToFloat64(font.MeasureString(t.Face, cleaned+" "))
-					}
+			words := strings.Split(s.Text(), " ")
+			for i, word := range words {
+				var wordWidth float64
+				if t.processBBCode && t.bbcodeRegex.MatchString(word) {
+					// Strip out any bbcodes from size calculation
+					cleaned := t.bbcodeRegex.ReplaceAllString(word, "")
+					wordWidth, _ = text.Measure(cleaned, t.Face, 0)
+				} else {
+					wordWidth, _ = text.Measure(word, t.Face, 0)
+				}
+
+				// Don't add the space to the last chunk.
+				if i != len(words)-1 {
+					wordWidth += sWidth
 				}
 
 				// If the new word doesn't push this past the max width continue adding to the current line
-				if newLineWidth+wordWidth < t.MaxWidth {
+				if t.MaxWidth == 0 || newLineWidth+wordWidth < t.MaxWidth {
 					newLine = append(newLine, word)
 					newLineWidth += wordWidth
 				} else {
@@ -381,7 +412,8 @@ func (t *Text) measure() {
 		} else {
 			line := s.Text()
 			t.measurements.lines = append(t.measurements.lines, []string{line})
-			lw := fixedInt26_6ToFloat64(font.MeasureString(t.Face, line)) + float64(t.Inset.Left+t.Inset.Right)
+			lw, _ := text.Measure(line, t.Face, 0)
+			lw += float64(t.Inset.Left + t.Inset.Right)
 			t.measurements.lineWidths = append(t.measurements.lineWidths, lw)
 
 			if lw > t.measurements.boundingBoxWidth {
@@ -396,8 +428,4 @@ func (t *Text) measure() {
 func (t *Text) createWidget() {
 	t.widget = NewWidget(t.widgetOpts...)
 	t.widgetOpts = nil
-}
-
-func fixedInt26_6ToFloat64(i fixed.Int26_6) float64 {
-	return float64(i) / (1 << 6)
 }

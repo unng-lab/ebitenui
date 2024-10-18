@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"image/color"
 	"log"
@@ -8,10 +9,9 @@ import (
 	"github.com/ebitenui/ebitenui"
 	"github.com/ebitenui/ebitenui/image"
 	"github.com/ebitenui/ebitenui/widget"
-	"github.com/golang/freetype/truetype"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
-	"golang.org/x/image/font"
+	"github.com/hajimehoshi/ebiten/v2/text/v2"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -49,9 +49,7 @@ func main() {
 		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(color.NRGBA{0x13, 0x1a, 0x22, 0xff})),
 
 		// the container will use an anchor layout to layout its single child widget
-		widget.ContainerOpts.Layout(widget.NewAnchorLayout(
-			widget.AnchorLayoutOpts.Padding(widget.NewInsetsSimple(50)),
-		)),
+		widget.ContainerOpts.Layout(widget.NewAnchorLayout()),
 	)
 
 	// Construct a list. This is one of the more complicated widgets to use since
@@ -64,6 +62,7 @@ func main() {
 				HorizontalPosition: widget.AnchorLayoutPositionCenter,
 				VerticalPosition:   widget.AnchorLayoutPositionEnd,
 				StretchVertical:    true,
+				Padding:            widget.NewInsetsSimple(50),
 			}),
 		)),
 		// Set the entries in the list
@@ -129,7 +128,8 @@ func main() {
 		widget.ContainerOpts.WidgetOpts(
 			widget.WidgetOpts.LayoutData(widget.AnchorLayoutData{
 				HorizontalPosition: widget.AnchorLayoutPositionCenter,
-				VerticalPosition:   widget.AnchorLayoutPositionEnd,
+				VerticalPosition:   widget.AnchorLayoutPositionStart,
+				Padding:            widget.NewInsetsSimple(5),
 			}),
 		),
 		widget.ContainerOpts.Layout(widget.NewGridLayout(
@@ -215,7 +215,7 @@ func main() {
 
 		// add a handler that reacts to clicking the button
 		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-			entries := make([]any, 0)
+			entries = nil
 			game.list.SetEntries(entries)
 		}),
 	)
@@ -285,15 +285,15 @@ func loadButtonImage() (*widget.ButtonImage, error) {
 	}, nil
 }
 
-func loadFont(size float64) (font.Face, error) {
-	ttfFont, err := truetype.Parse(goregular.TTF)
+func loadFont(size float64) (text.Face, error) {
+	s, err := text.NewGoTextFaceSource(bytes.NewReader(goregular.TTF))
 	if err != nil {
+		log.Fatal(err)
 		return nil, err
 	}
 
-	return truetype.NewFace(ttfFont, &truetype.Options{
-		Size:    size,
-		DPI:     72,
-		Hinting: font.HintingFull,
-	}), nil
+	return &text.GoTextFace{
+		Source: s,
+		Size:   size,
+	}, nil
 }

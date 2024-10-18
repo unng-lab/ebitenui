@@ -143,10 +143,16 @@ func (s *ProgressBar) SetLocation(rect img.Rectangle) {
 	s.widget.Rect = rect
 }
 
-func (s *ProgressBar) Render(screen *ebiten.Image, def DeferredRenderFunc) {
+func (s *ProgressBar) Render(screen *ebiten.Image) {
 	s.init.Do()
-	s.widget.Render(screen, def)
+	s.widget.Render(screen)
 	s.draw(screen)
+}
+
+func (s *ProgressBar) Update() {
+	s.init.Do()
+
+	s.widget.Update()
 }
 
 func (s *ProgressBar) draw(screen *ebiten.Image) {
@@ -215,5 +221,5 @@ func (s *ProgressBar) GetCurrent() int {
 }
 
 func (s *ProgressBar) createWidget() {
-	s.widget = NewWidget(s.widgetOpts...)
+	s.widget = NewWidget(append([]WidgetOpt{WidgetOpts.TrackHover(true)}, s.widgetOpts...)...)
 }

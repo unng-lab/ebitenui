@@ -9,14 +9,14 @@ import (
 
 	"github.com/ebitenui/ebitenui/image"
 	"github.com/hajimehoshi/ebiten/v2"
-	"golang.org/x/image/font"
+	"github.com/hajimehoshi/ebiten/v2/text/v2"
 )
 
 type Caret struct {
 	Width int
 	Color color.Color
 
-	face          font.Face
+	face          text.Face
 	blinkInterval time.Duration
 
 	init    *MultiOnce
@@ -67,7 +67,7 @@ func (o CaretOptions) Color(c color.Color) CaretOpt {
 	}
 }
 
-func (o CaretOptions) Size(face font.Face, width int) CaretOpt {
+func (o CaretOptions) Size(face text.Face, width int) CaretOpt {
 	return func(c *Caret) {
 		c.face = face
 		c.Width = width
@@ -89,12 +89,12 @@ func (c *Caret) PreferredSize() (int, int) {
 	return c.Width, c.height
 }
 
-func (c *Caret) Render(screen *ebiten.Image, def DeferredRenderFunc) {
+func (c *Caret) Render(screen *ebiten.Image) {
 	c.init.Do()
 
 	c.state = c.state()
 
-	c.widget.Render(screen, def)
+	c.widget.Render(screen)
 
 	if !c.visible {
 		return
@@ -106,6 +106,12 @@ func (c *Caret) Render(screen *ebiten.Image, def DeferredRenderFunc) {
 		p := c.widget.Rect.Min
 		opts.GeoM.Translate(float64(p.X), float64(p.Y))
 	})
+}
+
+func (c *Caret) Update() {
+	c.init.Do()
+
+	c.widget.Update()
 }
 
 func (c *Caret) ResetBlinking() {
@@ -141,7 +147,7 @@ func (c *Caret) blinkState(visible bool, timer *time.Timer, expired *atomic.Valu
 func (c *Caret) createWidget() {
 	c.widget = NewWidget()
 
-	m := c.face.Metrics()
-	c.height = int(math.Round(fixedInt26_6ToFloat64(m.Ascent + m.Descent)))
+	_, height := text.Measure(" ", c.face, 0)
+	c.height = int(math.Round(height))
 	c.face = nil
 }

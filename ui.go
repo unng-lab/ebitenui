@@ -20,9 +20,16 @@ type UI struct {
 	//If true the default tab/shift-tab to focus will be disabled
 	DisableDefaultFocus bool
 
+	// This exposes a Render call before the Container is drawn,
+	// but after the Windows with DrawLayer < 0 are drawn.
+	PreRenderHook widget.RenderFunc
+
+	// This exposes a Render call after the Container is drawn,
+	// but before the Windows with DrawLayer >= 0 (all by default) are drawn.
+	PostRenderHook widget.RenderFunc
+
 	focusedWidget widget.HasWidget
 	inputLayerers []input.Layerer
-	renderers     []widget.Renderer
 	windows       []*widget.Window
 
 	previousContainer *widget.Container
@@ -39,22 +46,84 @@ func (u *UI) Update() {
 		u.Container.GetWidget().DragAndDropEvent.AddHandler(u.handleDragAndDropEvent)
 
 		u.previousContainer = u.Container
+		// Close all Ephemeral Windows (tooltip/dnd/etc)
+		u.closeEphemeralWindows(0)
 	}
+
+	u.handleFocusChangeRequest()
+
+	index := 0
+	for ; index < len(u.windows); index++ {
+		if u.windows[index].DrawLayer < 0 {
+			u.windows[index].Update()
+		} else {
+			break
+		}
+	}
+	u.Container.Update()
+
+	for ; index < len(u.windows); index++ {
+		u.windows[index].Update()
+	}
+
+	event.ExecuteDeferred()
 }
 
 // Draw renders u onto screen. This function should be called in the Ebiten Draw function.
 func (u *UI) Draw(screen *ebiten.Image) {
-	event.ExecuteDeferred()
 	input.Draw(screen)
 	defer input.AfterDraw(screen)
 	x, y := screen.Bounds().Dx(), screen.Bounds().Dy()
 	rect := image.Rect(0, 0, x, y)
-
-	u.handleFocusChangeRequest()
 	u.setupInputLayers()
 	u.Container.SetLocation(rect)
 	u.render(screen)
+	//Render elements that pop up (like combobox) on top of everything else
+	widget.RenderDeferred(screen)
+}
 
+func (u *UI) setupInputLayers() {
+	num := 1
+	if len(u.windows) > 0 {
+		num += len(u.windows)
+	}
+
+	if cap(u.inputLayerers) < num {
+		u.inputLayerers = make([]input.Layerer, num)
+	}
+
+	u.inputLayerers = u.inputLayerers[:0]
+	u.inputLayerers = append(u.inputLayerers, u.Container)
+	for _, w := range u.windows {
+		u.inputLayerers = append(u.inputLayerers, w)
+	}
+
+	input.SetupInputLayersWithDeferred(u.inputLayerers)
+}
+
+func (u *UI) render(screen *ebiten.Image) {
+	index := 0
+	for ; index < len(u.windows); index++ {
+		if u.windows[index].DrawLayer < 0 {
+			u.windows[index].Render(screen)
+		} else {
+			break
+		}
+	}
+
+	if u.PreRenderHook != nil {
+		u.PreRenderHook(screen)
+	}
+
+	u.Container.Render(screen)
+
+	if u.PostRenderHook != nil {
+		u.PostRenderHook(screen)
+	}
+
+	for ; index < len(u.windows); index++ {
+		u.windows[index].Render(screen)
+	}
 }
 
 func (u *UI) handleContextMenu(args interface{}) {
@@ -204,55 +273,6 @@ func (u *UI) ChangeFocus(direction widget.FocusDirection) {
 	}
 }
 
-func (u *UI) setupInputLayers() {
-	num := 1 // u.Container
-	if len(u.windows) > 0 {
-		num += len(u.windows)
-	}
-
-	if cap(u.inputLayerers) < num {
-		u.inputLayerers = make([]input.Layerer, num)
-	}
-
-	u.inputLayerers = u.inputLayerers[:0]
-	u.inputLayerers = append(u.inputLayerers, u.Container)
-	for _, w := range u.windows {
-		u.inputLayerers = append(u.inputLayerers, w)
-	}
-
-	// TODO: SetupInputLayersWithDeferred should reside in "internal" subpackage
-	input.SetupInputLayersWithDeferred(u.inputLayerers)
-}
-
-func (u *UI) render(screen *ebiten.Image) {
-	num := 1 // u.Container
-	if len(u.windows) > 0 {
-		num += len(u.windows)
-	}
-
-	if cap(u.renderers) < num {
-		u.renderers = make([]widget.Renderer, num)
-	}
-	u.renderers = u.renderers[:0]
-
-	index := 0
-	for ; index < len(u.windows); index++ {
-		if u.windows[index].DrawLayer < 0 {
-			u.renderers = append(u.renderers, u.windows[index])
-		} else {
-			break
-		}
-	}
-	u.renderers = append(u.renderers, u.Container)
-
-	for ; index < len(u.windows); index++ {
-		u.renderers = append(u.renderers, u.windows[index])
-	}
-
-	// TODO: RenderWithDeferred should reside in "internal" subpackage
-	widget.RenderWithDeferred(screen, u.renderers)
-}
-
 // AddWindow adds window w to ui for rendering. It returns a function to remove w from ui.
 func (u *UI) AddWindow(w *widget.Window) widget.RemoveWindowFunc {
 	if u.addWindow(w) {
@@ -264,6 +284,8 @@ func (u *UI) AddWindow(w *widget.Window) widget.RemoveWindowFunc {
 		if w.Modal && u.focusedWidget != nil {
 			u.focusedWidget.(widget.Focuser).Focus(false)
 		}
+		// Close all Ephemeral Windows (tooltip/dnd/etc)
+		u.closeEphemeralWindows(0)
 	}
 
 	return w.GetCloseFunction()
@@ -298,10 +320,15 @@ func (u *UI) removeWindow(w *widget.Window) {
 		}
 	}
 	if windowIdx != -1 && !w.Ephemeral {
-		for i := len(u.windows) - 1; i >= windowIdx; i-- {
-			if u.windows[i].Ephemeral {
-				u.windows = append(u.windows[:i], u.windows[i+1:]...)
-			}
+		u.closeEphemeralWindows(windowIdx)
+	}
+}
+
+// Used to close tooltips/dnd etc
+func (u *UI) closeEphemeralWindows(windowIdx int) {
+	for i := len(u.windows) - 1; i >= windowIdx; i-- {
+		if u.windows[i].Ephemeral {
+			u.windows = append(u.windows[:i], u.windows[i+1:]...)
 		}
 	}
 }

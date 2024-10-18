@@ -73,6 +73,9 @@ func NewScrollContainer(opts ...ScrollContainerOpt) *ScrollContainer {
 }
 
 func (s *ScrollContainer) validate() {
+	if s.content == nil {
+		panic("ScrollContainer: Content is required.")
+	}
 	if s.image == nil {
 		panic("ScrollContainer: Image is required.")
 	}
@@ -143,31 +146,50 @@ func (s *ScrollContainer) PreferredSize() (int, int) {
 func (s *ScrollContainer) SetupInputLayer(def input.DeferredSetupInputLayerFunc) {
 	s.init.Do()
 
-	s.content.GetWidget().ElevateToNewInputLayer(&input.Layer{
-		DebugLabel: "scroll container content",
-		EventTypes: input.LayerEventTypeAll ^ input.LayerEventTypeWheel,
-		BlockLower: true,
-		FullScreen: false,
-		RectFunc:   s.ViewRect,
-	})
+	if s.widget.IsVisible() {
+		s.content.GetWidget().ElevateToNewInputLayer(&input.Layer{
+			DebugLabel: "scroll container content",
+			EventTypes: input.LayerEventTypeAll ^ input.LayerEventTypeWheel,
+			BlockLower: true,
+			FullScreen: false,
+			RectFunc:   s.ViewRect,
+		})
 
-	if il, ok := s.content.(input.Layerer); ok {
-		il.SetupInputLayer(def)
+		if il, ok := s.content.(input.Layerer); ok {
+			il.SetupInputLayer(def)
+		}
 	}
 }
 
-func (s *ScrollContainer) Render(screen *ebiten.Image, def DeferredRenderFunc) {
+func (s *ScrollContainer) Render(screen *ebiten.Image) {
 	s.init.Do()
 
 	s.clampScroll()
 	s.content.GetWidget().Disabled = s.widget.Disabled
 
-	s.widget.Render(screen, def)
+	s.widget.Render(screen)
 
 	s.draw(screen)
 
-	s.renderContent(screen, def)
+	s.renderContent(screen)
 }
+
+func (s *ScrollContainer) Update() {
+	s.init.Do()
+
+	s.widget.Update()
+
+	if s.content == nil {
+		return
+	}
+
+	r, ok := s.content.(Updater)
+	if !ok {
+		return
+	}
+	r.Update()
+}
+
 func (s *ScrollContainer) GetFocusers() []Focuser {
 	result := []Focuser{}
 	switch v := s.content.(type) {
@@ -226,7 +248,7 @@ func (s *ScrollContainer) drawImageOptions(opts *ebiten.DrawImageOptions) {
 	}
 }
 
-func (s *ScrollContainer) renderContent(screen *ebiten.Image, def DeferredRenderFunc) {
+func (s *ScrollContainer) renderContent(screen *ebiten.Image) {
 	if s.content == nil {
 		return
 	}
@@ -264,7 +286,7 @@ func (s *ScrollContainer) renderContent(screen *ebiten.Image, def DeferredRender
 
 	s.renderBuf.Draw(screen,
 		func(buf *ebiten.Image) {
-			r.Render(buf, def)
+			r.Render(buf)
 		},
 		func(buf *ebiten.Image) {
 			s.image.Mask.Draw(buf, s.widget.Rect.Dx()-s.padding.Dx(), s.widget.Rect.Dy()-s.padding.Dy(), func(opts *ebiten.DrawImageOptions) {

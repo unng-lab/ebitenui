@@ -5,7 +5,7 @@ import (
 
 	"github.com/ebitenui/ebitenui/event"
 	"github.com/ebitenui/ebitenui/input"
-
+	internalinput "github.com/ebitenui/ebitenui/internal/input"
 	"github.com/hajimehoshi/ebiten/v2"
 )
 
@@ -42,6 +42,9 @@ type Widget struct {
 	// CursorEnterEvent fires an event with *WidgetCursorEnterEventArgs when the cursor enters the widget's Rect.
 	CursorEnterEvent *event.Event
 
+	// CursorMoveEvent fires an event with *WidgetCursorMoveEventArgs when the cursor moves within the widget's Rect.
+	CursorMoveEvent *event.Event
+
 	// CursorExitEvent fires an event with *WidgetCursorExitEventArgs when the cursor exits the widget's Rect.
 	CursorExitEvent *event.Event
 
@@ -65,8 +68,10 @@ type Widget struct {
 
 	DragAndDropEvent *event.Event
 
-	//Custom Data is a field to allow users to attach data to any widget
+	// Custom Data is a field to allow users to attach data to any widget
 	CustomData interface{}
+	// This allows for non-focusable widgets (Containers) to report hover.
+	TrackHover bool
 
 	canDrop CanDropFunc
 	drop    DropFunc
@@ -74,6 +79,7 @@ type Widget struct {
 	parent                      *Widget
 	self                        HasWidget
 	lastUpdateCursorEntered     bool
+	lastUpdateCursorPosition    image.Point
 	lastUpdateMouseLeftPressed  bool
 	lastUpdateMouseRightPressed bool
 	mouseLeftPressedInside      bool
@@ -102,8 +108,14 @@ type HasWidget interface {
 
 // Renderer may be implemented by concrete widget types that can render onto the screen.
 type Renderer interface {
-	// Render renders the widget onto screen. def may be called to defer additional rendering.
-	Render(screen *ebiten.Image, def DeferredRenderFunc)
+	// Render renders the widget onto screen.
+	Render(screen *ebiten.Image)
+}
+
+// Updater may be implemented by concrete widget types that should be updated.
+type Updater interface {
+	// Update updates the widget state based on input.
+	Update()
 }
 
 type FocusDirection int
@@ -142,12 +154,7 @@ const (
 	Visibility_Hide                     // Hide widget, but don't take up space
 )
 
-// RenderFunc is a function that renders a widget onto screen. def may be called to defer
-// additional rendering.
-type RenderFunc func(screen *ebiten.Image, def DeferredRenderFunc)
-
-// DeferredRenderFunc is a function that stores r for deferred execution.
-type DeferredRenderFunc func(r RenderFunc)
+type RenderFunc func(screen *ebiten.Image)
 
 // PreferredSizer may be implemented by concrete widget types that can report a preferred size.
 type PreferredSizer interface {
@@ -157,11 +164,40 @@ type PreferredSizer interface {
 // WidgetCursorEnterEventArgs are the arguments for cursor enter events.
 type WidgetCursorEnterEventArgs struct { //nolint:golint
 	Widget *Widget
+
+	// OffsetX is the x offset relative to the widget's Rect.
+	OffsetX int
+
+	// OffsetY is the y offset relative to the widget's Rect.
+	OffsetY int
+}
+
+// WidgetCursorMoveEventArgs are the arguments for cursor move events.
+type WidgetCursorMoveEventArgs struct { //nolint:golint
+	Widget *Widget
+
+	// OffsetX is the x offset relative to the widget's Rect.
+	OffsetX int
+
+	// OffsetY is the y offset relative to the widget's Rect.
+	OffsetY int
+
+	// DiffX is the x change to the old mouse cursor position.
+	DiffX int
+
+	// DiffY is the y change to the old mouse cursor position.
+	DiffY int
 }
 
 // WidgetCursorExitEventArgs are the arguments for cursor exit events.
 type WidgetCursorExitEventArgs struct { //nolint:golint
 	Widget *Widget
+
+	// OffsetX is the x offset relative to the widget's Rect.
+	OffsetX int
+
+	// OffsetY is the y offset relative to the widget's Rect.
+	OffsetY int
 }
 
 // WidgetMouseButtonPressedEventArgs are the arguments for mouse button press events.
@@ -238,6 +274,9 @@ type DragAndDropDroppedHandlerFunc func(args *DragAndDropDroppedEventArgs)
 // WidgetCursorEnterHandlerFunc is a function that handles cursor enter events.
 type WidgetCursorEnterHandlerFunc func(args *WidgetCursorEnterEventArgs) //nolint:golint
 
+// WidgetCursorMoveHandlerFunc is a function that handles cursor move events.
+type WidgetCursorMoveHandlerFunc func(args *WidgetCursorMoveEventArgs) //nolint:golint
+
 // WidgetCursorExitHandlerFunc is a function that handles cursor exit events.
 type WidgetCursorExitHandlerFunc func(args *WidgetCursorExitEventArgs) //nolint:golint
 
@@ -262,6 +301,7 @@ var deferredRenders []RenderFunc
 func NewWidget(opts ...WidgetOpt) *Widget {
 	w := &Widget{
 		CursorEnterEvent:         &event.Event{},
+		CursorMoveEvent:          &event.Event{},
 		CursorExitEvent:          &event.Event{},
 		MouseButtonPressedEvent:  &event.Event{},
 		MouseButtonReleasedEvent: &event.Event{},
@@ -292,6 +332,15 @@ func (o WidgetOptions) CursorEnterHandler(f WidgetCursorEnterHandlerFunc) Widget
 	return func(w *Widget) {
 		w.CursorEnterEvent.AddHandler(func(args interface{}) {
 			f(args.(*WidgetCursorEnterEventArgs))
+		})
+	}
+}
+
+// WithCursorMoveHandler configures a Widget with cursor move event handler f.
+func (o WidgetOptions) CursorMoveHandler(f WidgetCursorMoveHandlerFunc) WidgetOpt {
+	return func(w *Widget) {
+		w.CursorMoveEvent.AddHandler(func(args interface{}) {
+			f(args.(*WidgetCursorMoveEventArgs))
 		})
 	}
 }
@@ -399,6 +448,13 @@ func (o WidgetOptions) CursorPressed(cursorPressed string) WidgetOpt {
 	}
 }
 
+// This allows for non-focusable widgets (Containers) to report hover.
+func (o WidgetOptions) TrackHover(trackHover bool) WidgetOpt {
+	return func(w *Widget) {
+		w.TrackHover = trackHover
+	}
+}
+
 func (w *Widget) drawImageOptions(opts *ebiten.DrawImageOptions) {
 	opts.GeoM.Translate(float64(w.Rect.Min.X), float64(w.Rect.Min.Y))
 }
@@ -424,13 +480,17 @@ func (w *Widget) EffectiveInputLayer() *input.Layer {
 }
 
 // always call this method first before rendering themselves.
-func (w *Widget) Render(screen *ebiten.Image, def DeferredRenderFunc) {
+func (w *Widget) Render(screen *ebiten.Image) {
+
+}
+
+func (w *Widget) Update() {
 	w.fireEvents()
-	if w.ToolTip != nil {
-		w.ToolTip.Render(w, screen, def)
-	}
 	if w.DragAndDrop != nil {
-		w.DragAndDrop.Render(w.self, screen, def)
+		w.DragAndDrop.Update(w.self)
+	}
+	if w.ToolTip != nil {
+		w.ToolTip.Update(w)
 	}
 }
 
@@ -443,16 +503,35 @@ func (w *Widget) fireEvents() {
 	entered := inside && layer.ActiveFor(x, y, input.LayerEventTypeAny)
 	if entered != w.lastUpdateCursorEntered {
 		if entered {
+			off := p.Sub(w.Rect.Min)
 			w.CursorEnterEvent.Fire(&WidgetCursorEnterEventArgs{
-				Widget: w,
+				Widget:  w,
+				OffsetX: off.X,
+				OffsetY: off.Y,
 			})
 		} else {
+			off := p.Sub(w.Rect.Min)
 			w.CursorExitEvent.Fire(&WidgetCursorExitEventArgs{
-				Widget: w,
+				Widget:  w,
+				OffsetX: off.X,
+				OffsetY: off.Y,
 			})
 		}
 
 		w.lastUpdateCursorEntered = entered
+	}
+
+	if entered && w.lastUpdateCursorPosition != p {
+		off := p.Sub(w.Rect.Min)
+		w.CursorMoveEvent.Fire(&WidgetCursorMoveEventArgs{
+			Widget:  w,
+			OffsetX: off.X,
+			OffsetY: off.Y,
+			DiffX:   p.X - w.lastUpdateCursorPosition.X,
+			DiffY:   p.Y - w.lastUpdateCursorPosition.Y,
+		})
+
+		w.lastUpdateCursorPosition = p
 	}
 
 	if entered && len(w.CursorHovered) > 0 {
@@ -481,7 +560,6 @@ func (w *Widget) fireEvents() {
 
 	if w.lastUpdateMouseRightPressed && !input.MouseButtonPressed(ebiten.MouseButtonRight) {
 		w.lastUpdateMouseRightPressed = false
-
 		off := p.Sub(w.Rect.Min)
 		w.MouseButtonReleasedEvent.Fire(&WidgetMouseButtonReleasedEventArgs{
 			Widget:  w,
@@ -497,28 +575,25 @@ func (w *Widget) fireEvents() {
 	}
 
 	if inside && input.MouseButtonJustPressedLayer(ebiten.MouseButtonLeft, layer) {
-		if inside {
-			w.mouseLeftPressedInside = inside
+		w.mouseLeftPressedInside = inside
 
-			if w.focusable != nil && !w.Disabled {
-				w.focusable.Focus(true)
-			} else {
-				w.FireFocusEvent(nil, false, p)
-			}
-
-			off := p.Sub(w.Rect.Min)
-			w.MouseButtonPressedEvent.Fire(&WidgetMouseButtonPressedEventArgs{
-				Widget:  w,
-				Button:  ebiten.MouseButtonLeft,
-				OffsetX: off.X,
-				OffsetY: off.Y,
-			})
+		if w.focusable != nil && !w.Disabled {
+			w.focusable.Focus(true)
+		} else {
+			w.FireFocusEvent(nil, false, p)
 		}
+
+		off := p.Sub(w.Rect.Min)
+		w.MouseButtonPressedEvent.Fire(&WidgetMouseButtonPressedEventArgs{
+			Widget:  w,
+			Button:  ebiten.MouseButtonLeft,
+			OffsetX: off.X,
+			OffsetY: off.Y,
+		})
 	}
 
 	if w.lastUpdateMouseLeftPressed && !input.MouseButtonPressed(ebiten.MouseButtonLeft) {
 		w.lastUpdateMouseLeftPressed = false
-
 		off := p.Sub(w.Rect.Min)
 		w.MouseButtonReleasedEvent.Fire(&WidgetMouseButtonReleasedEventArgs{
 			Widget:  w,
@@ -536,6 +611,10 @@ func (w *Widget) fireEvents() {
 			X:      scrollX,
 			Y:      scrollY,
 		})
+	}
+
+	if inside && w.TrackHover {
+		internalinput.InternalUIHovered = true
 	}
 }
 
@@ -589,16 +668,21 @@ func (widget *Widget) FireDragAndDropEvent(w *Window, show bool, dnd *DragAndDro
 	})
 }
 
-// RenderWithDeferred renders r to screen. This function should not be called directly.
-func RenderWithDeferred(screen *ebiten.Image, rs []Renderer) {
-	for _, r := range rs {
-		appendToDeferredRenderQueue(r.Render)
+// IsVisible will check if this particular widget is visible by checking Visibility of it and
+// all the parents it has, as if one of the parents is not visible this widget will not be visible
+// even if it has Visibility_Show
+func (widget *Widget) IsVisible() bool {
+	if widget.Visibility != Visibility_Show {
+		return false
 	}
-
-	renderDeferredRenderQueue(screen)
+	if widget.parent != nil {
+		return widget.parent.IsVisible()
+	}
+	return true
 }
 
-func renderDeferredRenderQueue(screen *ebiten.Image) {
+// RenderWithDeferred renders r to screen. This function should not be called directly.
+func RenderDeferred(screen *ebiten.Image) {
 	defer func(d []RenderFunc) {
 		deferredRenders = d[:0]
 	}(deferredRenders)
@@ -607,10 +691,10 @@ func renderDeferredRenderQueue(screen *ebiten.Image) {
 		r := deferredRenders[0]
 		deferredRenders = deferredRenders[1:]
 
-		r(screen, appendToDeferredRenderQueue)
+		r(screen)
 	}
 }
 
-func appendToDeferredRenderQueue(r RenderFunc) {
+func AppendToDeferredRenderQueue(r RenderFunc) {
 	deferredRenders = append(deferredRenders, r)
 }

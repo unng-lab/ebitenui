@@ -6,7 +6,7 @@ import (
 	"github.com/ebitenui/ebitenui/event"
 	"github.com/ebitenui/ebitenui/input"
 	"github.com/hajimehoshi/ebiten/v2"
-	"golang.org/x/image/font"
+	"github.com/hajimehoshi/ebiten/v2/text/v2"
 )
 
 type TabBook struct {
@@ -16,7 +16,7 @@ type TabBook struct {
 	containerOpts []ContainerOpt
 	buttonOpts    []ButtonOpt
 	buttonImages  *ButtonImage
-	buttonFace    font.Face
+	buttonFace    text.Face
 	buttonColor   *ButtonTextColor
 	flipBookOpts  []FlipBookOpt
 	buttonSpacing int
@@ -145,7 +145,7 @@ func (o TabBookOptions) TabButtonSpacing(s int) TabBookOpt {
 	}
 }
 
-func (o TabBookOptions) TabButtonText(face font.Face, color *ButtonTextColor) TabBookOpt {
+func (o TabBookOptions) TabButtonText(face text.Face, color *ButtonTextColor) TabBookOpt {
 	return func(t *TabBook) {
 		t.buttonFace = face
 		t.buttonColor = color
@@ -207,7 +207,7 @@ func (t *TabBook) GetDropTargets() []HasWidget {
 	return t.container.GetDropTargets()
 }
 
-func (t *TabBook) Render(screen *ebiten.Image, def DeferredRenderFunc) {
+func (t *TabBook) Render(screen *ebiten.Image) {
 	t.init.Do()
 
 	d := t.container.GetWidget().Disabled
@@ -215,7 +215,13 @@ func (t *TabBook) Render(screen *ebiten.Image, def DeferredRenderFunc) {
 		b.GetWidget().Disabled = d || tab.Disabled
 	}
 
-	t.container.Render(screen, def)
+	t.container.Render(screen)
+}
+
+func (t *TabBook) Update() {
+	t.init.Do()
+
+	t.container.Update()
 }
 
 func (t *TabBook) createWidget() {

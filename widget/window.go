@@ -28,9 +28,16 @@ type WindowChangedEventArgs struct {
 
 type WindowChangedHandlerFunc func(args *WindowChangedEventArgs)
 
+type WindowClosedEventArgs struct {
+	Window *Window
+}
+
+type WindowClosedHandlerFunc func(args *WindowClosedEventArgs)
+
 type Window struct {
 	ResizeEvent *event.Event
 	MoveEvent   *event.Event
+	ClosedEvent *event.Event
 
 	Modal      bool
 	Contents   *Container
@@ -69,6 +76,7 @@ func NewWindow(opts ...WindowOpt) *Window {
 	w := &Window{
 		MoveEvent:   &event.Event{},
 		ResizeEvent: &event.Event{},
+		ClosedEvent: &event.Event{},
 		init:        &MultiOnce{},
 	}
 	w.init.Append(w.createWidget)
@@ -164,6 +172,21 @@ func (o WindowOptions) ResizeHandler(f WindowChangedHandlerFunc) WindowOpt {
 	}
 }
 
+// This handler is triggered when window is closed.
+// The window can be closed by either calling [Window.Close] or
+// by invoking an [UI.AddWindow] returned close function.
+//
+// This handler is called after the window is closed.
+// The provided Window object is still accessible, but the window
+// is already removed from UI.
+func (o WindowOptions) ClosedHandler(f WindowClosedHandlerFunc) WindowOpt {
+	return func(w *Window) {
+		w.ClosedEvent.AddHandler(func(args interface{}) {
+			f(args.(*WindowClosedEventArgs))
+		})
+	}
+}
+
 // This option sets the size and location of the window.
 // This method will account for specified MinSize and MaxSize values.
 func (o WindowOptions) Location(rect image.Rectangle) WindowOpt {
@@ -223,7 +246,12 @@ func (w *Window) GetContainer() *Container {
 
 // Typically used internally.
 func (w *Window) SetCloseFunction(close RemoveWindowFunc) {
-	w.closeFunc = close
+	w.closeFunc = func() {
+		close()
+		w.ClosedEvent.Fire(&WindowClosedEventArgs{
+			Window: w,
+		})
+	}
 }
 
 // Typically used internally.
@@ -251,7 +279,7 @@ func (w *Window) SetupInputLayer(def input.DeferredSetupInputLayerFunc) {
 }
 
 // Typically used internally
-func (w *Window) Render(screen *ebiten.Image, def DeferredRenderFunc) {
+func (w *Window) Render(screen *ebiten.Image) {
 	x, y := input.CursorPosition()
 
 	if w.dragging {
@@ -298,15 +326,23 @@ func (w *Window) Render(screen *ebiten.Image, def DeferredRenderFunc) {
 			w.resizingHeight = false
 		}
 	}
-	w.container.Render(screen, def)
+	w.container.Render(screen)
+}
+
+func (w *Window) Update() {
+	w.init.Do()
+	w.container.Update()
 }
 
 func (w *Window) createWidget() {
 	if w.TitleBar != nil {
-		w.container = NewContainer(ContainerOpts.Layout(NewGridLayout(
-			GridLayoutOpts.Columns(1),
-			GridLayoutOpts.Stretch([]bool{true}, []bool{false, true}),
-		)))
+		w.container = NewContainer(
+			ContainerOpts.Layout(NewGridLayout(
+				GridLayoutOpts.Columns(1),
+				GridLayoutOpts.Stretch([]bool{true}, []bool{false, true}),
+			)),
+			ContainerOpts.WidgetOpts(WidgetOpts.TrackHover(true)),
+		)
 		w.TitleBar.GetWidget().LayoutData = GridLayoutData{MaxHeight: w.titleBarHeight}
 		w.TitleBar.GetWidget().MinHeight = w.titleBarHeight
 		if w.Draggable {
@@ -332,10 +368,13 @@ func (w *Window) createWidget() {
 		w.container.AddChild(w.TitleBar)
 		w.container.AddChild(w.Contents)
 	} else {
-		w.container = NewContainer(ContainerOpts.Layout(NewGridLayout(
-			GridLayoutOpts.Columns(1),
-			GridLayoutOpts.Stretch([]bool{true}, []bool{true}),
-		)))
+		w.container = NewContainer(
+			ContainerOpts.Layout(NewGridLayout(
+				GridLayoutOpts.Columns(1),
+				GridLayoutOpts.Stretch([]bool{true}, []bool{true}),
+			)),
+			ContainerOpts.WidgetOpts(WidgetOpts.TrackHover(true)),
+		)
 
 		w.container.AddChild(w.Contents)
 	}

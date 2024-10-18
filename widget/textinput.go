@@ -14,7 +14,7 @@ import (
 	"github.com/ebitenui/ebitenui/input"
 	"github.com/ebitenui/ebitenui/internal/jsUtil"
 	"github.com/hajimehoshi/ebiten/v2"
-	"golang.org/x/image/font"
+	"github.com/hajimehoshi/ebiten/v2/text/v2"
 )
 
 type TextInput struct {
@@ -28,7 +28,7 @@ type TextInput struct {
 	image           *TextInputImage
 	color           *TextInputColor
 	padding         Insets
-	face            font.Face
+	face            text.Face
 	repeatDelay     time.Duration
 	repeatInterval  time.Duration
 	validationFunc  TextInputValidationFunc
@@ -230,7 +230,7 @@ func (o TextInputOptions) Padding(i Insets) TextInputOpt {
 	}
 }
 
-func (o TextInputOptions) Face(f font.Face) TextInputOpt {
+func (o TextInputOptions) Face(f text.Face) TextInputOpt {
 	return func(t *TextInput) {
 		t.face = f
 	}
@@ -303,7 +303,7 @@ func (t *TextInput) PreferredSize() (int, int) {
 	return w, h
 }
 
-func (t *TextInput) Render(screen *ebiten.Image, def DeferredRenderFunc) {
+func (t *TextInput) Render(screen *ebiten.Image) {
 	t.init.Do()
 
 	t.text.GetWidget().Disabled = t.widget.Disabled
@@ -345,10 +345,22 @@ func (t *TextInput) Render(screen *ebiten.Image, def DeferredRenderFunc) {
 		}
 	}
 
-	t.widget.Render(screen, def)
+	t.widget.Render(screen)
 
 	t.renderImage(screen)
-	t.renderTextAndCaret(screen, def)
+	t.renderTextAndCaret(screen)
+}
+
+func (t *TextInput) Update() {
+	t.init.Do()
+
+	t.widget.Update()
+	if t.text != nil {
+		t.text.Update()
+	}
+	if t.caret != nil {
+		t.caret.Update()
+	}
 }
 
 func (t *TextInput) idleState(newKeyOrCommand bool) textInputState {
@@ -446,9 +458,13 @@ func (t *TextInput) Insert(c []rune) {
 			}
 		}
 	}
-
 	t.inputText = s
+
 	t.cursorPosition += len(c)
+	if t.cursorPosition > len([]rune(t.inputText)) {
+		t.cursorPosition = len([]rune(t.inputText))
+	}
+	t.caret.ResetBlinking()
 }
 
 func (t *TextInput) CursorMoveLeft() {
@@ -556,10 +572,10 @@ func (t *TextInput) renderImage(screen *ebiten.Image) {
 	}
 }
 
-func (t *TextInput) renderTextAndCaret(screen *ebiten.Image, def DeferredRenderFunc) {
+func (t *TextInput) renderTextAndCaret(screen *ebiten.Image) {
 	t.renderBuf.Draw(screen,
 		func(buf *ebiten.Image) {
-			t.drawTextAndCaret(buf, def)
+			t.drawTextAndCaret(buf)
 		},
 		func(buf *ebiten.Image) {
 			rect := t.widget.Rect
@@ -571,7 +587,7 @@ func (t *TextInput) renderTextAndCaret(screen *ebiten.Image, def DeferredRenderF
 		})
 }
 
-func (t *TextInput) drawTextAndCaret(screen *ebiten.Image, def DeferredRenderFunc) {
+func (t *TextInput) drawTextAndCaret(screen *ebiten.Image) {
 	rect := t.widget.Rect
 	tr := rect
 	tr = tr.Add(img.Point{t.padding.Left, t.padding.Top})
@@ -610,7 +626,7 @@ func (t *TextInput) drawTextAndCaret(screen *ebiten.Image, def DeferredRenderFun
 	} else {
 		t.text.Color = t.color.Idle
 	}
-	t.text.Render(screen, def)
+	t.text.Render(screen)
 
 	if t.focused {
 		if t.widget.Disabled && t.color.DisabledCaret != nil {
@@ -622,7 +638,7 @@ func (t *TextInput) drawTextAndCaret(screen *ebiten.Image, def DeferredRenderFun
 		tr = tr.Add(img.Point{cx, 0})
 		t.caret.SetLocation(tr)
 
-		t.caret.Render(screen, def)
+		t.caret.Render(screen)
 	}
 }
 
@@ -702,7 +718,7 @@ func (t *TextInput) AddFocus(direction FocusDirection, focus Focuser) {
 /** Focuser Interface - End **/
 
 func (t *TextInput) createWidget() {
-	t.widget = NewWidget(t.widgetOpts...)
+	t.widget = NewWidget(append([]WidgetOpt{WidgetOpts.TrackHover(true)}, t.widgetOpts...)...)
 	t.widget.focusable = t
 	t.widgetOpts = nil
 
@@ -714,14 +730,14 @@ func (t *TextInput) createWidget() {
 	t.mask = image.NewNineSliceColor(color.NRGBA{255, 0, 255, 255})
 }
 
-func fontAdvance(s string, f font.Face) int {
-	_, a := font.BoundString(f, s)
-	return int(math.Round(fixedInt26_6ToFloat64(a)))
+func fontAdvance(s string, f text.Face) int {
+	a := text.Advance(s, f)
+	return int(math.Round(a))
 }
 
 // fontStringIndex returns an index into r that corresponds closest to pixel position x
 // when string(r) is drawn using f. Pixel position x==0 corresponds to r[0].
-func fontStringIndex(r []rune, f font.Face, x int) int {
+func fontStringIndex(r []rune, f text.Face, x int) int {
 	start := 0
 	end := len(r)
 	p := 0

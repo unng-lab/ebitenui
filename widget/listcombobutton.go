@@ -7,7 +7,7 @@ import (
 	"github.com/ebitenui/ebitenui/input"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	"golang.org/x/image/font"
+	"github.com/hajimehoshi/ebiten/v2/text/v2"
 )
 
 type ListComboButton struct {
@@ -80,7 +80,7 @@ func (o ListComboButtonOptions) ListOpts(opts ...ListOpt) ListComboButtonOpt {
 	}
 }
 
-func (o ListComboButtonOptions) Text(face font.Face, image *ButtonImageImage, color *ButtonTextColor) ListComboButtonOpt {
+func (o ListComboButtonOptions) Text(face text.Face, image *ButtonImageImage, color *ButtonTextColor) ListComboButtonOpt {
 	return o.SelectComboButtonOpts(SelectComboButtonOpts.ComboButtonOpts(ComboButtonOpts.ButtonOpts(ButtonOpts.TextAndImage("", face, image, color))))
 }
 
@@ -178,8 +178,18 @@ func (l *ListComboButton) SetupInputLayer(def input.DeferredSetupInputLayerFunc)
 	l.button.SetupInputLayer(def)
 }
 
-func (l *ListComboButton) Render(screen *ebiten.Image, def DeferredRenderFunc) {
+func (l *ListComboButton) Render(screen *ebiten.Image) {
 	l.init.Do()
+
+	l.button.Render(screen)
+
+}
+
+func (l *ListComboButton) Update() {
+	l.init.Do()
+
+	l.button.Update()
+
 	if l.button.button.button.focused {
 		if !l.disableDefaultKeys {
 			if input.KeyPressed(ebiten.KeyDown) || input.KeyPressed(ebiten.KeyUp) {
@@ -187,8 +197,6 @@ func (l *ListComboButton) Render(screen *ebiten.Image, def DeferredRenderFunc) {
 			}
 		}
 	}
-
-	l.button.Render(screen, def)
 
 }
 
