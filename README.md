@@ -7,8 +7,8 @@
   </a>
   <h1>Ebiten UI</h1>
 
-[![Release](https://img.shields.io/github/v/release/ebitenui/ebitenui?style=for-the-badge&logo=github&labelColor=%23202e3bff&color=%235a7d93ff%20)](https://github.com/ebitenui/ebitenui/releases)
-[![License](https://img.shields.io/github/license/ebitenui/ebitenui?style=for-the-badge&logo=github&labelColor=%23202e3bff&color=%235a7d93ff%20)](https://opensource.org/licenses/MIT)
+[![Release](https://img.shields.io/github.com/v/release/ebitenui/ebitenui?style=for-the-badge&logo=github&labelColor=%23202e3bff&color=%235a7d93ff%20)](https://github.com/ebitenui/ebitenui/releases)
+[![License](https://img.shields.io/github.com/license/ebitenui/ebitenui?style=for-the-badge&logo=github&labelColor=%23202e3bff&color=%235a7d93ff%20)](https://opensource.org/licenses/MIT)
 [![Github](https://img.shields.io/badge/code-5a7d93ff?style=for-the-badge&logo=github&label=github&labelColor=%23202e3bff&color=%235a7d93ff)](https://github.com/ebitenui/ebitenui)
 [![Docs](https://img.shields.io/badge/ebitenui.github.io-5a7d93ff?style=for-the-badge&logo=go&logoColor=white&label=docs&labelColor=%23202e3bff&color=%235a7d93ff)](https://ebitenui.github.io)
 [![Discord](https://img.shields.io/discord/958140778931175424?style=for-the-badge&labelColor=%23202e3bff&color=%235a7d93ff%20&label=Discord&logo=discord&logoColor=white)](https://discord.gg/ujEeeHgptU)
@@ -32,7 +32,7 @@ Quick Start
 ------
 Ebiten UI is written in Go 1.19 which is available at [https://go.dev/](https://go.dev/).
 
-There are Ebiten UI examples that can be found in the `_examples/` folder. 
+There are Ebiten UI examples that can be found in the `_examples/` folder.
 
 They can be run from the root directory of the project with the following commands:
 * Ebiten UI complete demo: `go run github.com/ebitenui/ebitenui/_examples/demo`
